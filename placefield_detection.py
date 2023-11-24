@@ -216,12 +216,8 @@ class detect_PC:
     self.dataBH = {}
 
     ## first, handing over some general data
-    self.dataBH['active'] = data['active']
-    self.dataBH['time'] = data['time']
-    self.dataBH['position'] = data['position']
-
-    # self.dataBH['velocity'] = data['velocity']/self.para['nbin']*self.para['L_track']
-    # self.dataBH['position'] = data['position']/data['position'].max()*self.para['L_track']
+    for key in ['active','time','position']:
+      self.dataBH[key] = data[key]
 
     ## apply binning
     min_val,max_val = np.nanpercentile(data['position'],(0.1,99.9))
@@ -1274,16 +1270,16 @@ class detect_PC:
 
   def build_PC_results(self,nCells):
     results = {}
-    results['status'] = {'MI_value':np.zeros(nCells)*np.NaN,
-                         'MI_p_value':np.zeros(nCells)*np.NaN,
-                         'MI_z_score':np.zeros(nCells)*np.NaN,
-                         'Isec_value':np.zeros(nCells)*np.NaN,
-                         'Isec_p_value':np.zeros(nCells)*np.NaN,
-                         'Isec_z_score':np.zeros(nCells)*np.NaN,
+    results['status'] = {'MI_value':np.full(nCells,np.NaN),
+                         'MI_p_value':np.full(nCells,np.NaN),
+                         'MI_z_score':np.full(nCells,np.NaN),
+                         'Isec_value':np.full(nCells,np.NaN),
+                         'Isec_p_value':np.full(nCells,np.NaN),
+                         'Isec_z_score':np.full(nCells,np.NaN),
                          #'Z':np.zeros((nCells,self.f_max+1,2))*np.NaN,
                          #'Bayes_factor':np.zeros((nCells,self.f_max,2))*np.NaN,
-                         'SNR':np.zeros(nCells)*np.NaN,
-                         'r_value':np.zeros(nCells)*np.NaN}
+                         'SNR':np.full(nCells,np.NaN),
+                         'r_value':np.full(nCells,np.NaN)}
 
     results['fields'] = {'parameter':np.zeros((nCells,5,4,1+len(self.para['CI_arr'])))*np.NaN,          ### (mean,std,CI_low,CI_top)
                          'p_x':np.zeros((nCells,5,self.para['nbin'])),##sp.sparse.COO((nCells,3,self.para['nbin'])),#
@@ -1291,9 +1287,9 @@ class detect_PC:
                          'reliability':np.zeros((nCells,5))*np.NaN,
                          'Bayes_factor':np.zeros((nCells,5,2))*np.NaN,
                          'nModes':np.zeros(nCells).astype('int')}
-                         #'major':np.zeros(nCells)*np.NaN}
+                         #'major':np.full(nCells,np.NaN)}
 
-    results['firingstats'] = {'rate':np.zeros(nCells)*np.NaN,
+    results['firingstats'] = {'rate':np.full(nCells,np.NaN),
                               'map':np.zeros((nCells,self.para['nbin']))*np.NaN,
                               'std':np.zeros((nCells,self.para['nbin']))*np.NaN,
                               'CI':np.zeros((nCells,2,self.para['nbin']))*np.NaN,
@@ -1301,50 +1297,7 @@ class detect_PC:
                               'trial_field':np.zeros((nCells,5,self.dataBH['trials']['ct']),'bool'),
                               'parNoise':np.zeros((nCells,2))*np.NaN}
     return results
-
-
-  #def set_para(self,basePath,mouse,s,nP,plt_bool,sv_bool):
-
-    ### set paths:
-    #pathMouse = pathcat([basePath,mouse])
-    #pathSession = pathcat([pathMouse,'Session%02d'%s])
-
-    #nbin = 100
-    #qtl_steps = 5
-    #coarse_factor = 4
-    #self.para = {'nbin':nbin,'f':15,
-                #'bin_array':np.linspace(0,nbin-1,nbin),
-                #'bin_array_centers':np.linspace(0,nbin,nbin+1)-0.5,
-                #'coarse_factor':coarse_factor,
-                #'nbin_coarse':int(nbin/coarse_factor),
-
-                #'nP':nP,
-                #'N_bs':10000,'repnum':1000,
-                #'qtl_steps':qtl_steps,'sigma':1,
-                #'qtl_weight':np.ones(qtl_steps)/qtl_steps,
-                #'names':['A_0','A','SD','theta'],
-                #'CI_arr':[0.001,0.025,0.05,0.159,0.5,0.841,0.95,0.975,0.999],
-
-                #'plt_bool':plt_bool&(nP==0),
-                #'plt_theory_bool':False&(nP==0),
-                #'plt_sv':sv_bool&(nP==0),
-
-                #'mouse':mouse,
-                #'session':s,
-                #'pathSession':pathSession,
-                #'pathFigs':'/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Results/pics/Methods',
-
-                #### provide names for figures
-                #'svname_status':pathcat([pathSession,'PC_fields_status.mat']),
-                #'svname_fields':pathcat([pathSession,'PC_fields_para.mat']),
-                #'svname_firingstats':pathcat([pathSession,'PC_fields_firingstats.mat']),
-
-                #### modes, how to perform PC detection
-                #'modes':{'activity':'calcium',          ## data provided: 'calcium' or 'spikes'
-                          #'info':'MI',                   ## information calculated: 'MI', 'Isec' (/second), 'Ispike' (/spike)
-                          #'shuffle':'shuffle_trials'     ## how to shuffle: 'shuffle_trials', 'shuffle_global', 'randomize'
-                        #}
-                #}
+  
 
   def get_firingmap(self,S,binpos,dwelltime=None,coarse=False):
 
@@ -1362,6 +1315,7 @@ class detect_PC:
       firingmap[dwelltime==0] = np.NaN
 
     return firingmap
+
 
   def plt_results(self,result,t):
     
