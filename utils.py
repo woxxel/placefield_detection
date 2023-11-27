@@ -836,25 +836,75 @@ def get_reliability(trial_map,map,field,t):
     return rel, field_max, trial_field
 
 def get_firingrate(S,f=15,sd_r=1):
+    '''
+        calculates the firing rate from a an array of spike probabilities ('S' from CaImAn) 
+        by thresholding data according to multiples sd_r of estimated variance
 
-    S[S<0.0001*S.max()]=0
+        returns
+            - firing rate (in spikes/sec, depending on provided framerate f)
+            - calculated spiking threshold
+            - array with number of spikes per frame
+
+    '''
+
+    S[S<S.max()*10**(-4)]=0
     Ns = (S>0).sum()
     if Ns==0:
-      return 0,np.NaN,np.NaN
+        return 0,np.NaN,np.NaN
     else:
-      trace = S[S>0]
-      baseline = np.median(trace)
-      trace -= baseline
-      trace *= -1*(trace <= 0)
+        # estimate noise level by using median value (assuming most entries are not actual spikes)
+        # and obtain values below median to estimate variance from negative half-gaussian distribution
+        trace = S[S>0]
+        baseline = np.median(trace)
+        trace -= baseline
+        trace *= -1*(trace <= 0)
 
-      Ns_baseline = (trace>0).sum()
-      noise = np.sqrt((trace**2).sum()/(Ns_baseline*(1-2/np.pi)))
+        # calculate variance
+        Ns_baseline = (trace>0).sum()
+        noise = np.sqrt((trace**2).sum()/(Ns_baseline*(1-2/np.pi)))
 
-      sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
-      firing_threshold_adapt = baseline + sd_r*noise
+        # either use provided sd_r, or calculate multiples of variance to ensure 
+        # p-value of 10% (including correction for multiple comparisons)
+        sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
+        firing_threshold_adapt = baseline + sd_r*noise
 
-      N_spikes = np.floor(S / firing_threshold_adapt).sum()
-      return N_spikes/(S.shape[0]/f),firing_threshold_adapt,np.floor(S / firing_threshold_adapt)#S > firing_threshold_adapt#
+        # number of spikes in each bin is the value multiple above calculated threshold
+        N_spikes = np.floor(S / firing_threshold_adapt).sum()
+
+        return N_spikes/(S.shape[0]/f),firing_threshold_adapt,np.floor(S / firing_threshold_adapt)#S > firing_threshold_adapt#
+
+
+def get_firingmap(S,binpos,dwelltime=None,nbin=None):
+
+    if not nbin:
+        nbin = np.max(binpos)+1
+    
+    ### calculates the firing map
+    spike_times = np.where(S)
+    spikes = S[spike_times]
+    binpos = binpos[spike_times]#.astype('int')
+
+    firingmap = np.zeros(nbin)
+    for (p,s) in zip(binpos,spikes):#range(len(binpos)):
+        firingmap[p] = firingmap[p]+s
+
+    if not (dwelltime is None):
+        firingmap = firingmap/dwelltime
+        firingmap[dwelltime==0] = np.NaN
+
+    return firingmap
+
+
+def get_MI(p_joint,p_x,p_f):
+
+    ### - joint distribution
+    ### - behavior distribution
+    ### - firing rate distribution
+    ### - all normalized, such that sum(p) = 1
+
+    p_tot = p_joint * np.log2(p_joint/(p_x[:,np.newaxis]*p_f[np.newaxis,:]))
+    return np.nansum(p_tot)
+
 
 def add_number(fig,ax,order=1,offset=None):
 
@@ -937,3 +987,57 @@ def get_mean_SD(SDs):
     n = mask.sum()
     vars = SDs[mask]**2
     return np.sqrt(1/n**2 * np.sum(vars))
+
+
+def jackknife(X,Y,W=None,rank=1):
+
+  ## jackknifing a linear fit (with possible weights)
+  ## W_i = weights of value-tuples (X_i,Y_i)
+
+    if type(W) == np.ndarray:
+        print('weights given (not working)')
+        W = np.ones(Y.shape)
+        Xw = X * np.sqrt(W[:,np.newaxis])
+        Yw = Y * np.sqrt(W)
+    else:
+        if rank==1:
+            Xw = X
+        elif rank==2:
+            Xw = np.vstack([X,np.ones(len(X))]).T
+        Yw = Y
+
+    if len(Xw.shape) < 2:
+        Xw = Xw[:,np.newaxis]
+
+    N_data = len(Y);
+
+    fit_jk = np.zeros((N_data,2));
+    mask_all = (~np.isnan(Y)) & (~np.isnan(X))
+
+    for i in range(N_data):
+        mask = np.copy(mask_all)
+        mask[i] = False;
+        try:
+            if rank==1:
+                    fit_jk[i,0] = np.linalg.lstsq(Xw[mask,:],Yw[mask])[0]
+            elif rank==2:
+                    fit_jk[i,:] = np.linalg.lstsq(Xw[mask,:],Yw[mask])[0]
+            #fit_jk[i,1] = 0
+        except:
+            fit_jk[i,:] = np.NaN
+
+    return np.nanmean(fit_jk,0)
+
+
+
+### -------------- lognorm distribution ---------------------
+def lognorm_paras(mean,sd):
+    shape = np.sqrt(np.log(sd/mean**2+1))
+    mu = np.log(mean/np.sqrt(sd/mean**2 + 1))
+    return mu, shape
+
+### -------------- Gamma distribution -----------------------
+def gamma_paras(mean,SD):
+    alpha = (mean/SD)**2
+    beta = mean/SD**2
+    return alpha, beta

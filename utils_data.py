@@ -61,6 +61,9 @@ def set_para(dataPath,nP=0,nbin=100,plt_bool=False,sv_bool=False,suffix='2'):
         'pxtomu':536/512,
         'L_track':120,
 
+        'SNR_thr': 2,
+        'r_value_thr': 0.5,
+
         'rate_thr':4,
         'width_thr':5,
 
