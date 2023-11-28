@@ -211,7 +211,7 @@ class PC_detection:
         data = {}
         for key in ['active','time','position']:
             data[key] = loadData[key]
-        data['active'] = sp.ndimage.binary_closing(data['active'],np.ones(30),border_value=True)
+        # data['active'] = sp.ndimage.binary_closing(data['active'],np.ones(30),border_value=True)
         print('actives:',data['active'].sum())
 
         ## apply binning

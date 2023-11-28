@@ -25,23 +25,23 @@ class HierarchicalBayesModel:
 
         '''
             TODO:
-            instead of finding correlated trials before identification, run bayesian 
-            inference on all neurons, but adjust log-likelihood:
-                * don't pool trial stats, but calculate logl for each trial
-                * calculate logl as probability to observe S spikes in time T (for each bin, see DM inference), 
-                    thus also make sense of silent trials
-                * in each trial, calculate logl for 1. no field and 2. for field
-                * take placefield position, width, etc as hierarchical parameter 
-                    (narrow distribution for location and baseline activity?)
-                * for each trial, take the better logl as contribution to overall loglikelihood
-                    (thus, avoid "activation" as parameter)
-                * consider placefield only, if 10%/20%, ... of trials have activation as better logl
-                * later, calculate logl for final parameter set to obtain active-trials (better logl)
-            
-            make sure all of this runs kinda fast!
+                instead of finding correlated trials before identification, run bayesian 
+                inference on all neurons, but adjust log-likelihood:
+                    * don't pool trial stats, but calculate logl for each trial
+                    * calculate logl as probability to observe S spikes in time T (for each bin, see DM inference), 
+                        thus also make sense of silent trials 
+                    * in each trial, calculate logl for 1. no field and 2. for field
+                    * take placefield position, width, etc as hierarchical parameter 
+                        (narrow distribution for location and baseline activity?)
+                    * for each trial, take the better logl as contribution to overall loglikelihood
+                        (thus, avoid "activation" as parameter)
+                    * consider placefield only, if 10%/20%, ... of trials have activation as better logl
+                    * later, calculate logl for final parameter set to obtain active-trials (better logl)
+                
+                make sure all of this runs kinda fast!
 
-            check, whether another hierarchy level should estimate noise-distribution parameters for overall data 
-                (thus, running inference only once on complete session, with N*4 parameters)
+                check, whether another hierarchy level should estimate noise-distribution parameters for overall data 
+                    (thus, running inference only once on complete session, with N*4 parameters)
         '''
 
         def get_logl(p):
