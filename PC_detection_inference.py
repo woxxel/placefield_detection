@@ -184,9 +184,14 @@ class PC_detection_inference:
             activity['trials'][t]['rate'] = activity['trials'][t]['s'].sum()/(self.behavior['trials']['nFrames'][t]/self.para['f'])
 
             if activity['trials'][t]['rate'] > 0:
-                print(activity['trials'][t]['s'])
-                activity['trials_firingmap'][t,:] = get_firingmap(activity['trials'][t]['s'],self.behavior['trials']['trial'][t]['binpos_active'],self.behavior['trials']['dwelltime'][t,:])#/activity['trials'][t]['rate']
-
+                print('trial ',t,activity['trials'][t]['s'])
+                activity['trials_firingmap'][t,:] = get_firingmap(
+                    activity['trials'][t]['s'],
+                    self.behavior['trials']['trial'][t]['binpos_active'],
+                    self.behavior['trials']['dwelltime'][t,:],
+                    self.para['nbin']
+                )#/activity['trials'][t]['rate']
+                print('done')
         self.activity = activity
         
 

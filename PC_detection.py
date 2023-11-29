@@ -312,11 +312,6 @@ class PC_detection:
 
 
 
-
-    
-
-
-
     def calc_Icorr(self,S,trials_S):
 
         S /= S[S>0].mean()
