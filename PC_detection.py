@@ -139,6 +139,8 @@ class PC_detection:
                 result_tmp.append(self.PC_detect.run_detection(self.activity['S'][n,:]))
                 print('\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs'%(n0+1,nCells_process,time.time()-t_start))
 
+
+        ## can't this be done more efficiently?
         results = build_struct_PC_results(self.nCells,self.para['nbin'],self.behavior['trials']['ct'],1+len(self.para['CI_arr']))
 
         for n in range(self.nCells):
@@ -236,16 +238,17 @@ class PC_detection:
 
         ## define trials
         data['trials'] = {}
-        data['trials']['start'] = np.hstack([0,np.where(np.diff(data['position'])<(-environment_length/2))[0] + 1,len(data['time'])-1])
-
+        trial_start = np.hstack([0,np.where(np.diff(data['position'])<(-environment_length/2))[0] + 1])
 
         ## remove partial trials from data (if fraction of length < partial_threshold)
-        partial_threshold = 0.5
+        partial_threshold = 0.6
         if not (data['binpos'][0] < self.para['nbin']*(1-partial_threshold)):
-            data['active'][:max(0,data['trials']['start'][0])] = False
+            print('remove partial first trial @',trial_start[0])
+            data['active'][:max(0,trial_start[0])] = False
 
         if not (data['binpos'][-1] >= self.para['nbin']*partial_threshold):
-            data['active'][data['trials']['start'][-1]:] = False
+            print('remove partial last trial @',trial_start[-1])
+            data['active'][trial_start[-1]:] = False
 
         data['nFrames'] = np.count_nonzero(data['active'])
 
@@ -257,21 +260,20 @@ class PC_detection:
         data['time_active'] = data['time'][data['active']]
 
         ## define start points
-        data['trials']['start_active'] = np.hstack([0,np.where(np.diff(data['binpos_active'])<(-self.para['nbin']/2))[0] + 1,data['active'].sum()])
-        data['trials']['start_active_t'] = data['time'][data['active']][data['trials']['start_active'][:-1]]
-        data['trials']['ct'] = len(data['trials']['start_active']) - 1
+        data['trials']['start'] = np.hstack([0,np.where(np.diff(data['binpos_active'])<(-self.para['nbin']/2))[0] + 1,data['active'].sum()])
+        data['trials']['start_t'] = data['time'][data['active']][data['trials']['start'][:-1]]
+        data['trials']['ct'] = len(data['trials']['start']) - 1
 
 
         ## getting trial-specific behavior data
         data['trials']['dwelltime'] = np.zeros((data['trials']['ct'],self.para['nbin']))
         data['trials']['nFrames'] = np.zeros(data['trials']['ct'],'int')#.astype('int')
 
-        data['trials']['trial'] = {}
+        data['trials']['binpos'] = {}
         for t in range(data['trials']['ct']):
-            data['trials']['trial'][t] = {}
-            data['trials']['trial'][t]['binpos_active'] = data['binpos_active'][data['trials']['start_active'][t]:data['trials']['start_active'][t+1]]
-            data['trials']['dwelltime'][t,:] = np.histogram(data['trials']['trial'][t]['binpos_active'],self.para['bin_array_centers'])[0]/self.para['f']
-            data['trials']['nFrames'][t] = len(data['trials']['trial'][t]['binpos_active'])
+            data['trials']['binpos'][t] = data['binpos_active'][data['trials']['start'][t]:data['trials']['start'][t+1]]
+            data['trials']['dwelltime'][t,:] = np.histogram(data['trials']['binpos'][t],self.para['bin_array_centers'])[0]/self.para['f']
+            data['trials']['nFrames'][t] = len(data['trials']['binpos'][t])
         
         self.behavior = data
 #        return data

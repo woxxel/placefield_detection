@@ -170,11 +170,11 @@ class PC_detection_inference:
 
         for t in range(self.behavior['trials']['ct']):
             activity['trials'][t] = {}
-            activity['trials'][t]['s'] = activity['s'][self.behavior['trials']['start_active'][t]:self.behavior['trials']['start_active'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
+            activity['trials'][t]['s'] = activity['s'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
             
             ## prepare quantiles, if MI is to be calculated
             if self.para['modes']['info'] == 'MI':
-                activity['trials'][t]['qtl'] = activity['qtl'][self.behavior['trials']['start_active'][t]:self.behavior['trials']['start_active'][t+1]];    ## should be quartiles?!
+                activity['trials'][t]['qtl'] = activity['qtl'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]];    ## should be quartiles?!
 
             if self.para['modes']['activity'] == 'spikes':
                 activity['trials'][t]['spike_times'] = np.where(activity['trials'][t]['s'])
@@ -187,7 +187,7 @@ class PC_detection_inference:
                 print('trial ',t,activity['trials'][t]['s'])
                 activity['trials_firingmap'][t,:] = get_firingmap(
                     activity['trials'][t]['s'],
-                    self.behavior['trials']['trial'][t]['binpos_active'],
+                    self.behavior['trials']['binpos'][t],
                     self.behavior['trials']['dwelltime'][t,:],
                     self.para['nbin']
                 )#/activity['trials'][t]['rate']
@@ -971,7 +971,7 @@ class PC_detection_inference:
         t_stop = self.behavior['time'][~idx_longrun]
         ax_Ca.bar(t_stop,np.ones(len(t_stop))*1.2*S_raw.max(),color=[0.9,0.9,0.9],zorder=0)
 
-        ax_Ca.fill_between([self.behavior['trials']['start_active_t'][n_trial],self.behavior['trials']['start_active_t'][n_trial+1]],[0,0],[1.2*S_raw.max(),1.2*S_raw.max()],color=[0,0,1,0.2],zorder=1)
+        ax_Ca.fill_between([self.behavior['trials']['start_t'][n_trial],self.behavior['trials']['start_t'][n_trial+1]],[0,0],[1.2*S_raw.max(),1.2*S_raw.max()],color=[0,0,1,0.2],zorder=1)
 
         ax_Ca.plot(self.behavior['time'],C,'k',linewidth=0.2)
         ax_Ca.plot(self.behavior['time'],S_raw,'r',linewidth=1)
@@ -1001,7 +1001,7 @@ class PC_detection_inference:
             ax_loc.scatter(t_active,pos_active,s=(S_active/S.max())**2*10+0.1,color='r',zorder=10)
             ax_loc.scatter(t_inactive,pos_inactive,s=(S_inactive/S.max())**2*10+0.1,color='k',zorder=10)
         ax_loc.bar(t_stop,np.ones(len(t_stop))*self.para['L_track'],width=1/15,color=[0.9,0.9,0.9],zorder=0)
-        ax_loc.fill_between([self.behavior['trials']['start_active_t'][n_trial],self.behavior['trials']['start_active_t'][n_trial+1]],[0,0],[self.para['L_track'],self.para['L_track']],color=[0,0,1,0.2],zorder=1)
+        ax_loc.fill_between([self.behavior['trials']['start_t'][n_trial],self.behavior['trials']['start_t'][n_trial+1]],[0,0],[self.para['L_track'],self.para['L_track']],color=[0,0,1,0.2],zorder=1)
 
         ax_loc.set_ylim([0,self.para['L_track']])
         ax_loc.set_xlim([t_start,t_end])
