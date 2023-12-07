@@ -879,8 +879,6 @@ def get_firingmap(S,binpos,dwelltime=None,nbin=None):
     if not nbin:
         nbin = np.max(binpos)+1
     
-    print(S.shape,binpos.shape,dwelltime.shape,nbin)
-
     ### calculates the firing map
     spike_times = np.where(S)
     spikes = S[spike_times]

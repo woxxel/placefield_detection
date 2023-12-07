@@ -21,7 +21,7 @@ class HierarchicalBayesModel:
         #self.lookup_steps = 100000
         #self.set_beta_prior(5,4)
 
-    def set_logl_func(self):
+    def set_logl_func(self,vectorized=True):
 
         '''
             TODO:
@@ -44,7 +44,7 @@ class HierarchicalBayesModel:
                     (thus, running inference only once on complete session, with N*4 parameters)
         '''
 
-        def get_logl(p):
+        def get_logl_vectorized(p):
             if len(p.shape)==1:
                 p = p[np.newaxis,:]
             p = p[...,np.newaxis]
@@ -74,7 +74,42 @@ class HierarchicalBayesModel:
 
             return logl
 
-        return get_logl
+        def get_logl(p):
+            
+            # if len(p.shape)==1:
+                # p = p[np.newaxis,:]
+            p = p[...,np.newaxis]
+
+            mean_model = np.full(self.Nx,p[0,:])
+            if p.shape[0] > 1:
+                for j in [-1,0,1]:   ## loop, to have periodic boundary conditions
+
+                    mean_model += (p[slice(1,None,3),:]*np.exp(-(self.x_arr[np.newaxis,:]-p[slice(3,None,3),:]+self.x_max*j)**2/(2*p[slice(2,None,3),:]**2))).sum(0)
+                    
+            #plt.figure()
+            #for i in range(p.shape[0]):
+                #plt.subplot(p.shape[0],1,i+1)
+                #plt.plot(self.x_arr,np.squeeze(mean_model[i,:]))
+            #plt.show(block=False)
+
+            SD_model = self.parsNoise[1] + self.parsNoise[0]*mean_model
+
+            alpha = (mean_model/SD_model)**2
+            beta = mean_model/SD_model**2
+
+            logl = np.nansum(alpha*np.log(beta) - np.log(sp.special.gamma(alpha)) + (alpha-1)*np.log(self.behavior) - beta*self.behavior ,0)#.sum(1)
+            if self.f>1:
+                p_theta = p[slice(3,None,3)]
+                dTheta = np.squeeze(np.abs(np.mod(p_theta[:,1]-p_theta[:,0]+self.nbin/2,self.nbin)-self.nbin/2))
+                logl[dTheta<(self.nbin/10)] = -1e300
+
+            return logl
+
+
+        if vectorized:
+            return get_logl_vectorized
+        else:
+            return get_logl
 
     ### want beta-prior for std - costly, though, so define lookup-table
     def set_beta_prior(self,a,b):
