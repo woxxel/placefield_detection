@@ -7,11 +7,11 @@ import numpy as np
 from .utils import pathcat
 from .get_t_measures import *
 
-def set_para(dataPath,nP=0,nbin=100,plt_bool=False,sv_bool=False,suffix='2'):
+def set_para(basePath,mouse,s,nP=0,nbin=100,plt_bool=False,sv_bool=False,suffix='2'):
 
     ## set paths:
-    # pathMouse = pathcat([basePath,mouse])
-    # pathSession = pathcat([pathMouse,'Session%02d'%s])
+    pathMouse = pathcat([basePath,mouse])
+    pathSession = pathcat([pathMouse,'Session%02d'%s])
 
     coarse_factor = int(nbin/20)
     #nbin = 100
@@ -80,16 +80,16 @@ def set_para(dataPath,nP=0,nbin=100,plt_bool=False,sv_bool=False,suffix='2'):
         #'CI_arr':[0.001,0.025,0.05,0.159,0.5,0.841,0.95,0.975,0.999],
         'CI_arr':[0.025,0.05,0.95,0.975],
 
-        'plt_bool':plt_bool&(nP==0),
-        # 'plt_theory_bool':True&(nP==0),
-        'plt_theory_bool':False,
-        'plt_sv':sv_bool&(nP==0),
+        'plt_bool':plt_bool & (nP==0),
+        'plt_theory_bool':plt_bool & (nP==0),
+        # 'plt_theory_bool':False,
+        'plt_sv':sv_bool & (nP==0),
 
-        # 'mouse':mouse,
-        # 'session':s,
-        'pathSession': dataPath,
-        # 'pathMouse':pathMouse,
-        'pathFigs': dataPath,#'/home/wollex/Data/Science/PhD/Thesis/pics/Methods',
+        'mouse':mouse,
+        'session':s,
+        'pathSession': pathSession,
+        'pathMouse': pathMouse,
+        'pathFigs': pathMouse,#'/home/wollex/Data/Science/PhD/Thesis/pics/Methods',
         
         ### provide names for figures
         'svname_status':          'PC_fields%s_status.mat'%suffix,

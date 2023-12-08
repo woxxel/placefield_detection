@@ -1,23 +1,22 @@
-import os, random, h5py, time, math, cmath, copy, importlib, warnings, pickle, sys
-sys.path.append('./CaImAn')
+import os, random, time, math, warnings, pickle, sys
+#sys.path.append('./CaImAn')
+
+## kinda temporary fix to allow importing of module directly
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+
 
 from caiman.utils.utils import load_dict_from_hdf5
-import multiprocessing as mp
 from multiprocessing import get_context
 
-from skimage import measure
 from collections import Counter
 import scipy as sp
 import scipy.stats as sstats
-import scipy.io as sio
 from scipy.io import savemat, loadmat
 
 import matplotlib.pyplot as plt
 from matplotlib import rc
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
-
-#from scipy.signal import savgol_filter
 
 ### UltraNest toolbox ###
 ### from https://github.com/JohannesBuchner/UltraNest
@@ -28,11 +27,10 @@ from ultranest.plot import cornerplot
 import ultranest.stepsampler
 # implement instead !! https://dynesty.readthedocs.io/en/latest/overview.html
 
-from .spike_shuffling import shuffling
+from PC_detection.spike_shuffling import shuffling
 
-from .utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
-from .utils_data import set_para
-from .utils_analysis import define_active
+from PC_detection.utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
+from PC_detection.utils_data import set_para
 
 warnings.filterwarnings("ignore")
 
@@ -383,13 +381,12 @@ class detect_PC:
       active['S'] = np.floor(S / S_thr)[self.dataBH['active']]#(S>S_thr).astype('float')[self.dataBH['active']]#
 
     if frate>0:
-      if self.para['modes']['info']:
-        if self.para['modes']['info'] == 'MI':
-          ## obtain quantized firing rate for MI calculation
-          active['qtl'] = sp.ndimage.gaussian_filter(np.floor(S / S_thr).astype('float')*self.para['f'],self.para['sigma'])#(S>S_thr).astype('float')#
-          active['qtl'] = active['qtl'][self.dataBH['active']]
-          qtls = np.quantile(active['qtl'][active['qtl']>0],np.linspace(0,1,self.para['qtl_steps']+1))
-          active['qtl'] = np.count_nonzero(active['qtl'][:,np.newaxis]>=qtls[np.newaxis,1:-1],1)
+      if self.para['modes']['info'] == 'MI':
+        ## obtain quantized firing rate for MI calculation
+        active['qtl'] = sp.ndimage.gaussian_filter(np.floor(S / S_thr).astype('float')*self.para['f'],self.para['sigma'])#(S>S_thr).astype('float')#
+        active['qtl'] = active['qtl'][self.dataBH['active']]
+        qtls = np.quantile(active['qtl'][active['qtl']>0],np.linspace(0,1,self.para['qtl_steps']+1))
+        active['qtl'] = np.count_nonzero(active['qtl'][:,np.newaxis]>=qtls[np.newaxis,1:-1],1)
     return active, frate
 
 
@@ -1612,7 +1609,7 @@ class detect_PC:
     ax_loc.bar(t_stop,np.ones(len(t_stop))*self.para['L_track'],width=1/15,color=[0.9,0.9,0.9],zorder=0)
     ax_loc.fill_between([self.dataBH['trials']['start_active_t'][n_trial],self.dataBH['trials']['start_active_t'][n_trial+1]],[0,0],[self.para['L_track'],self.para['L_track']],color=[0,0,1,0.2],zorder=1)
 
-    ax_loc.set_ylim([0,self.para['L_track']])
+    ax_loc.set_ylim([0,self.para['nbin']])
     ax_loc.set_xlim([t_start,t_end])
     ax_loc.set_xlabel('time [s]')
     ax_loc.set_ylabel('position [bins]')
