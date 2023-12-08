@@ -22,7 +22,7 @@ import numpy as np
 import logging
 
 from .utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
-from .utils_data import set_para, build_struct_PC_results
+from .utils_data import detection_parameters, build_struct_PC_results
 # from .utils_analysis import define_active
 
 from .PC_detection_inference import *
@@ -53,10 +53,13 @@ class PC_detection:
         '''
 
         ### set global parameters and data for all processes to access
-        self.para = set_para(pathData,nP=nP,nbin=nbin,plt_bool=plt_bool,sv_bool=sv_bool,suffix=suffix)
+        paramsClass = detection_parameters(nP=nP,nbin=nbin,plt_bool=plt_bool,sv_bool=sv_bool)
+        paramsClass.set_paths(pathData,pathResults,suffix=suffix)
+
+        self.para = paramsClass.params
 
         self.load_behavior(pathBehavior)       ## load and process behavior
-        self.load_neuron_data(pathData)
+        self.load_neuron_data()
 
         self.PC_detect = PC_detection_inference(self.behavior,self.para)
 
@@ -173,18 +176,9 @@ class PC_detection:
             return results
         else:
             print('saving results...')
-            # savemat(self.para['svname_status'],results['status'])
-            # savemat(self.para['svname_fields'],results['fields'])
-            # savemat(self.para['svname_firingstats'],results['firingstats'])
-            status_path = os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_status'])[0] + '.pkl')
-            print(status_path)
-            field_path = os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_fields'])[0] + '.pkl')
-            print(field_path)
-            firingstats_path = os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_firingstats'])[0] + '.pkl')
-            print(firingstats_path)
-            pickleData(results['status'],status_path,mode='save')
-            pickleData(results['fields'],field_path,mode='save')
-            pickleData(results['firingstats'],firingstats_path,mode='save')
+            for key in ['status','fields','firingstats']:
+                pickleData(results[key],self.para[f'pathResults_{key}'],mode='save')
+
             return
         # else:
         #     print('nothing here to process')
@@ -278,9 +272,9 @@ class PC_detection:
         self.behavior = data
 #        return data
 
-    def load_neuron_data(self,pathData):        
+    def load_neuron_data(self):        
         ## load activity data from CaImAn results
-        ld = load_dict_from_hdf5(pathData)
+        ld = load_dict_from_hdf5(self.para['pathData'])
 
         activity = {}
         activity['S'] = ld['S']
@@ -357,7 +351,7 @@ class PC_detection:
 
         plt.figure()
         plt.plot(Icorr)
-        plt.errorbar(range(100),Icorr_art,yerr=Icorr_art_std)
+        plt.errorbar(range(self.para['nbin']),Icorr_art,yerr=Icorr_art_std)
         #plt.plot(Icorr_art,'r')
         plt.show(block=False)
 
@@ -398,7 +392,6 @@ class PC_detection:
     def plt_results(self,result,t=0):
     
         #print('for display: draw tuning curves from posterior distribution and evaluate TC-value for each bin. then, each bin has distribution of values and can be plotted! =)')
-        print('plot results')
         style_arr = ['--','-']
         #col_arr = []
         #fig,ax = plt.subplots(figsize=(5,3),dpi=150)
@@ -479,9 +472,10 @@ class PC_detection:
         # if ~hasattr(self,'results'):
         self.results = {}
         if results is None:
-            self.results['status'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_status'])[0]+'.pkl'))
-            self.results['fields'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_fields'])[0]+'.pkl'))
-            self.results['firingstats'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_firingstats'])[0]+'.pkl'))
+            print('reimplement loading results')
+            # self.results['status'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_status'])[0]+'.pkl'))
+            # self.results['fields'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_fields'])[0]+'.pkl'))
+            # self.results['firingstats'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_firingstats'])[0]+'.pkl'))
         else:
             self.results['status'] = results['status']
             self.results['fields'] = results['fields']

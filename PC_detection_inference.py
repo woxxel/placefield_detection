@@ -7,9 +7,12 @@ from collections import Counter
 import matplotlib.pyplot as plt
 from matplotlib import rc
 
+import multiprocessing
+# from multiprocessing import get_context
+
 from caiman.utils.utils import load_dict_from_hdf5
 
-from dynesty import DynamicNestedSampler, utils, plotting
+from dynesty import DynamicNestedSampler, utils, plotting as dyplot
 
 import ultranest
 from ultranest.plot import cornerplot
@@ -64,7 +67,7 @@ class PC_detection_inference:
         self.prepare_activity()
         result['firingstats']['rate'] = self.activity['firingrate']
         result['firingstats']['trial_map'] = self.activity['trials_firingmap']
-
+        
         if result['firingstats']['rate']==0:
             print('no activity for this neuron')
             return result
@@ -82,6 +85,10 @@ class PC_detection_inference:
 
 
         result = self.get_correlated_trials(result,smooth=2)
+        # print_msg = 'p-value: %.2f, value (MI/Isec): %.2f / %.2f, '%(result['status']['MI_p_value'],result['status']['MI_value'],result['status']['Isec_value'])
+        # t_process = time.time()-t_start
+        # print_msg += ' \t time passed: %.2fs'%t_process
+        # return result
         # print(result['firingstats']['trial_field'])
         # return
 
@@ -106,6 +113,8 @@ class PC_detection_inference:
             self.tmp = {}
             for f in range(self.f_max+1):
                 field = self.run_nestedSampling(result['firingstats'],firingstats_tmp['map'],f)
+            
+                return field
             ## pick most prominent peak and store into result, if bayes factor > 1/2
             if field['Bayes_factor'][0] > 0:
 
@@ -168,12 +177,13 @@ class PC_detection_inference:
         activity['trials'] = {}
         activity['trials_firingmap'] = np.zeros((self.behavior['trials']['ct'],self.para['nbin']))    ## preallocate
 
+        
         for t in range(self.behavior['trials']['ct']):
             activity['trials'][t] = {}
             activity['trials'][t]['s'] = activity['s'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
             
             ## prepare quantiles, if MI is to be calculated
-            if self.para['modes']['info'] == 'MI':
+            if self.para['modes']['info'] == 'MI' and activity['firingrate']>0:
                 activity['trials'][t]['qtl'] = activity['qtl'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]];    ## should be quartiles?!
 
             if self.para['modes']['activity'] == 'spikes':
@@ -452,25 +462,46 @@ class PC_detection_inference:
         hbm = HierarchicalBayesModel(firingmap,self.para['bin_array'],firingstats['parNoise'],f)
 
         ### test models with 0 vs 1 fields
-        paramnames = [self.para['names'][0]]
-        for ff in range(f):
-            paramnames.extend(self.para['names'][1:]*f)
-
-        ## hand over functions for sampler
-        my_prior_transform = hbm.transform_p
-        my_likelihood = hbm.set_logl_func()
+        #paramnames = [self.para['names'][0]]
+        #for ff in range(f):
+        #paramnames.extend(self.para['names'][1:]*f)
 
 
-        # sampler = DynamicNestedSampler(my_likelihood,my_prior_transform,4)
-        # print(sampler)
+        sampler = 'dynesty'  # define, whether ultranest or dynesty should be used
+        
+        if sampler=='dynesty':
+        
+            my_prior_transform = hbm.transform_p
+            my_likelihood = hbm.set_logl_func(vectorized=False)
 
-        sampler = ultranest.ReactiveNestedSampler(paramnames, my_likelihood, my_prior_transform,wrapped_params=hbm.pTC['wrap'],vectorized=True,num_bootstraps=20)#,log_dir='/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/PC_analysis/test_ultra')   ## set up sampler...
-        num_samples = 400
-        if f>1:
-            sampler.stepsampler = ultranest.stepsampler.RegionSliceSampler(nsteps=3)#, adaptive_nsteps='move-distance')
-            num_samples = 200
+            # pool = multiprocessing.pool.Pool()
+            # pool = get_context("spawn").Pool(8)
+            # pool.size = 8
 
-        sampling_result = sampler.run(min_num_live_points=num_samples,max_iters=10000,cluster_num_live_points=20,max_num_improvement_loops=3,show_status=False,viz_callback=False)  ## ... and run it #max_ncalls=500000,(f+1)*100,
+            sampler = DynamicNestedSampler(my_likelihood,my_prior_transform,1+3*f,sample='slice')
+            # print(sampler)
+
+            sampler.run_nested()
+
+            sampling_result = sampler.results
+            print(sampling_result)
+            return sampling_result
+
+        elif sampler=='ultranest':
+        
+            ## hand over functions for sampler
+            my_prior_transform = hbm.transform_p
+            my_likelihood = hbm.set_logl_func()
+
+            sampler = ultranest.ReactiveNestedSampler(paramnames, my_likelihood, my_prior_transform,wrapped_params=hbm.pTC['wrap'],vectorized=True,num_bootstraps=20)#,log_dir='/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/PC_analysis/test_ultra')   ## set up sampler...
+
+
+            num_samples = 400
+            if f>1:
+                sampler.stepsampler = ultranest.stepsampler.RegionSliceSampler(nsteps=3)#, adaptive_nsteps='move-distance')
+                num_samples = 200
+
+            sampling_result = sampler.run(min_num_live_points=num_samples,max_iters=10000,cluster_num_live_points=20,max_num_improvement_loops=3,show_status=False,viz_callback=False)  ## ... and run it #max_ncalls=500000,(f+1)*100,
         #t_end = time.time()
         #print('nested sampler done, time: %5.3g'%(t_end-t_start))
 
@@ -565,7 +596,7 @@ class PC_detection_inference:
                 plt.savefig(pathSv)
                 print('Figure saved @ %s'%pathSv)
 
-            print('add colorbar to other plot')
+            # print('add colorbar to other plot')
 
         nPars = data_tmp['samples'].shape[-1]
         nf = int((nPars - 1)/3)
@@ -574,7 +605,7 @@ class PC_detection_inference:
         bins = 2*self.para['nbin']
         offset = self.para['nbin']
 
-        print('data samples:', data['samples'])
+        # print('data samples:', data['samples'])
 
         fields = {}
         for f in range(nf):
@@ -908,8 +939,8 @@ class PC_detection_inference:
         field['parameter'][3,1:] = (field['parameter'][3,0] + field['parameter'][3,1:]) % self.para['nbin']
 
         ## rescaling to length 100
-        field['parameter'][2,:] *= self.para['L_track']/self.para['nbin']
-        field['parameter'][3,:] *= self.para['L_track']/self.para['nbin']
+        # field['parameter'][2,:] *= self.para['L_track']/self.para['nbin']
+        # field['parameter'][3,:] *= self.para['L_track']/self.para['nbin']
 
         return field
     

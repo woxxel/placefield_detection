@@ -731,8 +731,7 @@ def compute_serial_matrix(dist_mat,method="ward"):
         by the hierarchical tree (dendrogram)
     '''
     N = len(dist_mat)
-    flat_dist_mat = squareform(dist_mat,checks=False)
-
+    flat_dist_mat = np.maximum(0,squareform(dist_mat,checks=False))
     #res_linkage = linkage(flat_dist_mat, method=method,preserve_input=False)
     res_linkage = sp.cluster.hierarchy.linkage(flat_dist_mat,method=method,optimal_ordering=True)
     res_order = seriation(res_linkage, N, N + N-2)
@@ -769,7 +768,7 @@ def get_reliability(trial_map,map,field,t):
 
     ## obtain noise level + threshold
     sd_fmap = 2
-    nbin = 100
+    nbin = map.shape[0]
     base = np.nanmedian(map)
 
     if np.all(np.isnan(field[t,...])):
@@ -814,7 +813,7 @@ def get_reliability(trial_map,map,field,t):
 
         plt.plot(field[t,3,0],5,'rx')
 
-        plt.plot([0,100],[fmap_thr,fmap_thr],'r--')
+        plt.plot([0,nbin],[fmap_thr,fmap_thr],'r--')
         # print(field_rate)
         plt.subplot(212)
         plt.plot(field_rate)
@@ -829,7 +828,7 @@ def get_reliability(trial_map,map,field,t):
             plt.plot([field_bin_r,field_bin_r],[0,10],'k--')
             for i in [1,3]:
                 plt.plot(gauss_smooth(trial_map[tt,:],i))
-            plt.plot([0,100],[fmap_thr,fmap_thr],'r:')
+            plt.plot([0,nbin],[fmap_thr,fmap_thr],'r:')
             plt.ylim([0,20])
         plt.show(block=False)
 
@@ -850,7 +849,7 @@ def get_firingrate(S,f=15,sd_r=1):
     S[S<S.max()*10**(-4)]=0
     Ns = (S>0).sum()
     if Ns==0:
-        return 0,np.NaN,np.NaN
+        return 0,np.NaN,np.zeros_like(S)
     else:
         # estimate noise level by using median value (assuming most entries are not actual spikes)
         # and obtain values below median to estimate variance from negative half-gaussian distribution

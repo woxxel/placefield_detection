@@ -3,112 +3,82 @@
   set_para
 
 '''
+import os
 import numpy as np
-from .utils import pathcat
 from .get_t_measures import *
 
-def set_para(dataPath,nP=0,nbin=100,plt_bool=False,sv_bool=False,suffix='2'):
+class detection_parameters:
+    
+    params = {}
 
-    ## set paths:
-    # pathMouse = pathcat([basePath,mouse])
-    # pathSession = pathcat([pathMouse,'Session%02d'%s])
+    def __init__(self,nP=0,nbin=100,plt_bool=False,sv_bool=False):
 
-    coarse_factor = int(nbin/20)
-    #nbin = 100
-    #coarse_factor = 5
-    qtl_steps = 4
+        coarse_factor = int(nbin/20)
+        qtl_steps = 4
 
+        fact = 1 ## factor from path length to bin number
 
-    fact = 1 ## factor from path length to bin number
+        self.params = self.params | {
+            'nbin':nbin,'f':15,
+            'bin_array':np.linspace(0,nbin-1,nbin),
+            'bin_array_centers':np.linspace(0,nbin,nbin+1)-0.5,
+            'coarse_factor':coarse_factor,
+            'nbin_coarse':int(nbin/coarse_factor),
+            'pxtomu':536/512,
+            'L_track':120,
 
+            'SNR_thr': 2,
+            'r_value_thr': 0.5,
 
-    # gate_mice = ["34","35","65","66","72","839","840","841","842","879","882","884","886","67","68","91","549","551","756","757","758","918shKO","931wt","943shKO"]
-    # nogate_mice = ["231","232","236","243","245","246","762","",""]
+            'rate_thr':4,
+            'width_thr':5,
 
-    # zone_idx = {}
-    # if any(mouse==m for m in gate_mice):        ## gate
-    #   zone_idx['gate'] = [18,33]
-    #   zone_idx['reward'] = [75,95]
-    #   have_gt = True;
-    # elif any(mouse==m for m in nogate_mice):    ## no gate
-    #   zone_idx['reward'] = [50,70]#[50,66]#
-    #   zone_idx['gate'] = [np.NaN,np.NaN]
-    #   have_gt = False;
+            'trials_min_count':3,
+            'trials_min_fraction':0.2,
 
-    # zone_mask = {}
-    # zone_mask['reward'] = np.zeros(nbin).astype('bool')#range(zone_idx['reward'][0],zone_idx['reward'][-1])
-    # zone_mask['gate'] = np.zeros(nbin).astype('bool')
-    # zone_mask['others'] = np.ones(nbin).astype('bool')
+            'Ca_thr':0,
 
-    # zone_mask['reward'][zone_idx['reward'][0]:zone_idx['reward'][-1]] = True
-    # zone_mask['others'][zone_mask['reward']] = False
-    # if have_gt:
-    #   zone_mask['gate'][zone_idx['gate'][0]:zone_idx['gate'][-1]] = True
-    #   zone_mask['others'][zone_mask['gate']] = False
+            # 't_measures': get_t_measures(mouse),
 
-    # # zone_mask['others'][40:50] = False  ## remove central wall pattern change?!
-    # zone_mask['active'] = nbin+1
-    # zone_mask['silent'] = nbin+2
+            'nP':nP,
+            'N_bs':10000,
+            'repnum':1000,
+            'qtl_steps':qtl_steps,'sigma':5,
+            'qtl_weight':np.ones(qtl_steps)/qtl_steps,
+            'names':['A_0','A','SD','theta'],
+            #'CI_arr':[0.001,0.025,0.05,0.159,0.5,0.841,0.95,0.975,0.999],
+            'CI_arr':[0.025,0.05,0.95,0.975],
 
-    # print('now')
+            'plt_bool': plt_bool & (nP==0),
+            'plt_theory_bool': True & (nP==0),
+            # 'plt_theory_bool':False,
+            'plt_sv': sv_bool & (nP==0),
 
-    para = {
-        'nbin':nbin,'f':15,
-        'bin_array':np.linspace(0,nbin-1,nbin),
-        'bin_array_centers':np.linspace(0,nbin,nbin+1)-0.5,
-        'coarse_factor':coarse_factor,
-        'nbin_coarse':int(nbin/coarse_factor),
-        'pxtomu':536/512,
-        'L_track':120,
+            ### modes, how to perform PC detection
+            'modes':{'activity':'calcium',#'spikes',#          ## data provided: 'calcium' or 'spikes'
+                    'info':'MI',                   ## information calculated: 'MI', 'Isec' (/second), 'Ispike' (/spike)
+                    'shuffle':'shuffle_trials'     ## how to shuffle: 'shuffle_trials', 'shuffle_global', 'randomize'
+                    },
+        }
 
-        'SNR_thr': 2,
-        'r_value_thr': 0.5,
-
-        'rate_thr':4,
-        'width_thr':5,
-
-        'trials_min_count':3,
-        'trials_min_fraction':0.2,
-
-        'Ca_thr':0,
-
-        # 't_measures': get_t_measures(mouse),
-
-        'nP':nP,
-        'N_bs':10000,
-        'repnum':1000,
-        'qtl_steps':qtl_steps,'sigma':5,
-        'qtl_weight':np.ones(qtl_steps)/qtl_steps,
-        'names':['A_0','A','SD','theta'],
-        #'CI_arr':[0.001,0.025,0.05,0.159,0.5,0.841,0.95,0.975,0.999],
-        'CI_arr':[0.025,0.05,0.95,0.975],
-
-        'plt_bool':plt_bool&(nP==0),
-        # 'plt_theory_bool':True&(nP==0),
-        'plt_theory_bool':False,
-        'plt_sv':sv_bool&(nP==0),
-
-        # 'mouse':mouse,
-        # 'session':s,
-        'pathSession': dataPath,
-        # 'pathMouse':pathMouse,
-        'pathFigs': dataPath,#'/home/wollex/Data/Science/PhD/Thesis/pics/Methods',
+    
+    def set_paths(self,pathData,pathResults,suffix=''):
         
-        ### provide names for figures
-        'svname_status':          'PC_fields%s_status.mat'%suffix,
-        'svname_fields':          'PC_fields%s_para.mat'%suffix,
-        'svname_firingstats':     'PC_fields%s_firingstats.mat'%suffix,
+        self.params = self.params | {
+            
+            'pathData': pathData,
 
-        ### modes, how to perform PC detection
-        'modes':{'activity':'calcium',#'spikes',#          ## data provided: 'calcium' or 'spikes'
-                'info':'MI',                   ## information calculated: 'MI', 'Isec' (/second), 'Ispike' (/spike)
-                'shuffle':'shuffle_trials'     ## how to shuffle: 'shuffle_trials', 'shuffle_global', 'randomize'
-                },
+            'pathResults': pathResults,
+            'pathFigures': os.path.join(pathResults,'figures'),#'/home/wollex/Data/Science/PhD/Thesis/pics/Methods',
+            
+            ### provide names for distinct result files (needed?)
+            'pathResults_status':       os.path.join(pathResults,'PC_fields%s_status.pkl'%suffix),
+            'pathResults_fields':       os.path.join(pathResults,'PC_fields%s_para.pkl'%suffix),
+            'pathResults_firingstats':  os.path.join(pathResults,'PC_fields%s_firingstats.pkl'%suffix),
+        }
 
-        # 'zone_idx':zone_idx,
-        # 'zone_mask':zone_mask
-    }
 
+      
 
 ## -----------------------------------------------------------------------------------------------------------------------
 
@@ -143,7 +113,7 @@ def set_para(dataPath,nP=0,nbin=100,plt_bool=False,sv_bool=False,suffix='2'):
     #nT = nSes;
   #end
 
-    return para
+    # return para
 
 
 def build_struct_PC_results(nCells,nbin,trial_ct,nStats=5):
