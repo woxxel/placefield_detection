@@ -731,7 +731,7 @@ def compute_serial_matrix(dist_mat,method="ward"):
         by the hierarchical tree (dendrogram)
     '''
     N = len(dist_mat)
-    flat_dist_mat = squareform(dist_mat,checks=False)
+    flat_dist_mat = np.maximum(0,squareform(dist_mat,checks=False))
 
     #res_linkage = linkage(flat_dist_mat, method=method,preserve_input=False)
     res_linkage = sp.cluster.hierarchy.linkage(flat_dist_mat,method=method,optimal_ordering=True)
@@ -840,7 +840,7 @@ def get_firingrate(S,f=15,sd_r=1):
     S[S<0.0001*S.max()]=0
     Ns = (S>0).sum()
     if Ns==0:
-      return 0,np.NaN,np.NaN
+      return 0,np.NaN,np.zeros_like(S)
     else:
       trace = S[S>0]
       baseline = np.median(trace)
