@@ -7,22 +7,22 @@ from collections import Counter
 import matplotlib.pyplot as plt
 from matplotlib import rc
 
-import multiprocessing
+# import multiprocessing
 # from multiprocessing import get_context
 
 from caiman.utils.utils import load_dict_from_hdf5
 
-from dynesty import DynamicNestedSampler, utils, plotting as dyplot
+from dynesty import DynamicNestedSampler, pool as dypool, utils, plotting as dyplot
 
 import ultranest
 from ultranest.plot import cornerplot
 import ultranest.stepsampler
 # implement instead !! https://dynesty.readthedocs.io/en/latest/overview.html
 
-from .utils_data import build_struct_PC_results
-from .utils import get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number
+from .utils.utils_data import build_struct_PC_results
+from .utils.utils import get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number
 
-from .spike_shuffling import shuffling
+from .utils.spike_shuffling import shuffling
 from .HierarchicalBayesInference import *
 
 class PC_detection_inference:
@@ -55,22 +55,24 @@ class PC_detection_inference:
 
         self.S = S
 
-        #def PC_detect(varin):
         t_start = time.time()
-        result = build_struct_PC_results(1,self.para['nbin'],self.behavior['trials']['ct'],1+len(self.para['CI_arr']))
+        results = build_struct_PC_results(1,self.para['nbin'],self.behavior['trials']['ct'],1+len(self.para['CI_arr']))
 
-        # result['status']['SNR'] = SNR
-        # result['status']['r_value'] = r_value
+        self.firingstats = results['firingstats']
+        self.status = results['status']
+        self.fields = results['fields']
+
+        
+        # self.status['SNR'] = SNR
+        # self.status['r_value'] = r_value
 
 
         ### get overall as well as trial-specific activity and firingmap stats
         self.prepare_activity()
-        result['firingstats']['rate'] = self.activity['firingrate']
-        result['firingstats']['trial_map'] = self.activity['trials_firingmap']
         
-        if result['firingstats']['rate']==0:
+        if self.firingstats['rate']==0:
             print('no activity for this neuron')
-            return result
+            return self.return_results()
 
 
         ## calculate mutual information 
@@ -79,31 +81,26 @@ class PC_detection_inference:
         if self.para['modes']['info']:
             MI_tmp = self.test_MI()
             for key in MI_tmp.keys():
-                result['status'][key] = MI_tmp[key]
+                self.status[key] = MI_tmp[key]
+        
         #print('time taken (information): %.4f'%(time.time()-t_start))
 
 
 
-        result = self.get_correlated_trials(result,smooth=2)
-        # print_msg = 'p-value: %.2f, value (MI/Isec): %.2f / %.2f, '%(result['status']['MI_p_value'],result['status']['MI_value'],result['status']['Isec_value'])
-        # t_process = time.time()-t_start
-        # print_msg += ' \t time passed: %.2fs'%t_process
-        # return result
-        # print(result['firingstats']['trial_field'])
-        # return
+        self.get_correlated_trials(smooth=2)
 
-        firingstats_tmp = self.get_firingstats_from_trials(result['firingstats']['trial_map'])
+        firingstats_tmp = self.get_firingstats_from_trials(self.firingstats['trial_map'])
         for key in firingstats_tmp.keys():
-            result['firingstats'][key] = firingstats_tmp[key]
-        # return
-        # if np.any(result['firingstats']['trial_field']) and ((result['status']['SNR']>2) or np.isnan(result['status']['SNR'])):  # and (result['status']['MI_value']>0.1)     ## only do further processing, if enough trials are significantly correlated
+            self.firingstats[key] = firingstats_tmp[key]
+        
+        # if np.any(self.firingstats['trial_field']) and ((self.status['SNR']>2) or np.isnan(self.status['SNR'])):  # and (self.status['MI_value']>0.1)     ## only do further processing, if enough trials are significantly correlated
         for t in range(5):
-            trials = np.where(result['firingstats']['trial_field'][t,:])[0]
+            trials = np.where(self.firingstats['trial_field'][t,:])[0]
             if len(trials)<1:
                 # print(f'skipping trial {t}')
                 continue
 
-            firingstats_tmp = self.get_firingstats_from_trials(result['firingstats']['trial_map'],trials,complete=False)
+            firingstats_tmp = self.get_firingstats_from_trials(self.firingstats['trial_map'],trials,complete=False)
 
             #print(gauss_smooth(firingstats_tmp['map'],2))
 
@@ -112,31 +109,30 @@ class PC_detection_inference:
             ### do further tests only if there is "significant" mutual information
             self.tmp = {}
             for f in range(self.f_max+1):
-                field = self.run_nestedSampling(result['firingstats'],firingstats_tmp['map'],f)
+                fields = self.run_nestedSampling(self.firingstats,firingstats_tmp['map'],f)
             
-                return field
             ## pick most prominent peak and store into result, if bayes factor > 1/2
-            if field['Bayes_factor'][0] > 0:
+            if fields['Bayes_factor'][0] > 0:
 
-                dTheta = np.abs(np.mod(field['parameter'][3,0]-result['fields']['parameter'][:t,3,0]+self.para['L_track']/2,self.para['L_track'])-self.para['L_track']/2)
+                dTheta = np.abs(np.mod(fields['parameter'][3,0]-self.fields['parameter'][:t,3,0]+self.para['L_track']/2,self.para['L_track'])-self.para['L_track']/2)
                 if not np.any(dTheta < 10):   ## should be in cm
                     ## store results into array index "t"
-                    for key in field.keys():#['parameter','p_x','posterior_mass']:
-                        result['fields'][key][t,...] = field[key]
-                    result['fields']['nModes'] += 1
+                    for key in fields.keys():#['parameter','p_x','posterior_mass']:
+                        self.fields[key][t,...] = fields[key]
+                    self.fields['nModes'] += 1
 
                     ## reliability is calculated later
-                    result['fields']['reliability'][t], _, _ = get_reliability(result['firingstats']['trial_map'],result['firingstats']['map'],result['fields']['parameter'],t)
+                    self.fields['reliability'][t], _, _ = get_reliability(self.firingstats['trial_map'],self.firingstats['map'],self.fields['parameter'],t)
 
         t_process = time.time()-t_start
 
         #print('get spikeNr - time taken: %5.3g'%(t_end-t_start))
-        print_msg = 'p-value: %.2f, value (MI/Isec): %.2f / %.2f, '%(result['status']['MI_p_value'],result['status']['MI_value'],result['status']['Isec_value'])
+        print_msg = 'p-value: %.2f, value (MI/Isec): %.2f / %.2f, '%(self.status['MI_p_value'],self.status['MI_value'],self.status['Isec_value'])
 
-        if result['fields']['nModes']>0:
+        if self.fields['nModes']>0:
             print_msg += ' \t Bayes factor (reliability) :'
-            for f in np.where(result['fields']['Bayes_factor']>1/2)[0]:#range(result['fields']['nModes']):
-                print_msg += '\t (%d): %.2f+/-%.2f (%.2f), '%(f+1,result['fields']['Bayes_factor'][f,0],result['fields']['Bayes_factor'][f,1],result['fields']['reliability'][f])
+            for f in np.where(self.fields['Bayes_factor']>1/2)[0]:#range(self.fields['nModes']):
+                print_msg += '\t (%d): %.2f+/-%.2f (%.2f), '%(f+1,self.fields['Bayes_factor'][f,0],self.fields['Bayes_factor'][f,1],self.fields['reliability'][f])
         # if not(SNR is None):
         #     print_msg += '\t SNR: %.2f, \t r_value: %.2f'%(SNR,r_value)
         print_msg += ' \t time passed: %.2fs'%t_process
@@ -145,28 +141,32 @@ class PC_detection_inference:
         #except (KeyboardInterrupt, SystemExit):
             #raise
         # except:# KeyboardInterrupt: #:# TypeError:#
-        #   print('analysis failed: (-)')# p-value (MI): %.2f, \t bayes factor: %.2fg+/-%.2fg'%(result['status']['MI_p_value'],result['status']['Bayes_factor'][0,0],result['status']['Bayes_factor'][0,1]))
-        #   #result['fields']['nModes'] = -1
+        #   print('analysis failed: (-)')# p-value (MI): %.2f, \t bayes factor: %.2fg+/-%.2fg'%(self.status['MI_p_value'],self.status['Bayes_factor'][0,0],self.status['Bayes_factor'][0,1]))
+        #   #self.fields['nModes'] = -1
 
-        return result#,sampler
+        if self.para['plt_bool']:
+            self.plt_results()
+
+        return self.return_results()
     
+    def return_results(self):
+        return {'firingstats': self.firingstats, 'status': self.status, 'fields': self.fields}
 
 
     def prepare_activity(self):
 
         key_S = 'spikes' if self.para['modes']['activity']=='spikes' else 'S'
-        
-        
+
         activity = {}
         activity['S'] = self.S[self.behavior['active']]
 
         ### calculate firing rate
-        activity['firingrate'], _, activity['spikes'] = get_firingrate(activity['S'],f=self.para['f'],sd_r=self.para['Ca_thr'])
+        self.firingstats['rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=self.para['f'],sd_r=self.para['Ca_thr'])
 
         activity['s'] = activity[key_S]
         
         ## obtain quantized firing rate for MI calculation
-        if self.para['modes']['info'] == 'MI' and activity['firingrate']>0:
+        if self.para['modes']['info'] == 'MI' and self.firingstats['rate']>0:
             activity['qtl'] = sp.ndimage.gaussian_filter(activity['s'].astype('float')*self.para['f'],self.para['sigma'])
             # activity['qtl'] = activity['qtl'][self.behavior['active']]
             qtls = np.quantile(activity['qtl'][activity['qtl']>0],np.linspace(0,1,self.para['qtl_steps']+1))
@@ -175,7 +175,7 @@ class PC_detection_inference:
 
         ## obtain trial-specific activity
         activity['trials'] = {}
-        activity['trials_firingmap'] = np.zeros((self.behavior['trials']['ct'],self.para['nbin']))    ## preallocate
+        self.firingstats['trial_map'] = np.zeros((self.behavior['trials']['ct'],self.para['nbin']))    ## preallocate
 
         
         for t in range(self.behavior['trials']['ct']):
@@ -183,7 +183,7 @@ class PC_detection_inference:
             activity['trials'][t]['s'] = activity['s'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
             
             ## prepare quantiles, if MI is to be calculated
-            if self.para['modes']['info'] == 'MI' and activity['firingrate']>0:
+            if self.para['modes']['info'] == 'MI' and self.firingstats['rate']>0:
                 activity['trials'][t]['qtl'] = activity['qtl'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]];    ## should be quartiles?!
 
             if self.para['modes']['activity'] == 'spikes':
@@ -194,7 +194,7 @@ class PC_detection_inference:
             activity['trials'][t]['rate'] = activity['trials'][t]['s'].sum()/(self.behavior['trials']['nFrames'][t]/self.para['f'])
 
             if activity['trials'][t]['rate'] > 0:
-                activity['trials_firingmap'][t,:] = get_firingmap(
+                self.firingstats['trial_map'][t,:] = get_firingmap(
                     activity['trials'][t]['s'],
                     self.behavior['trials']['binpos'][t],
                     self.behavior['trials']['dwelltime'][t,:],
@@ -399,15 +399,15 @@ class PC_detection_inference:
         return firingstats
 
 
-    def get_correlated_trials(self,result,smooth=None):
+    def get_correlated_trials(self,smooth=None):
 
         ## check reliability
-        corr = corr0(gauss_smooth(result['firingstats']['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
+        corr = corr0(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
 
-        # corr = np.corrcoef(gauss_smooth(result['firingstats']['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
-        # corr = sstats.spearmanr(gauss_smooth(result['firingstats']['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
+        # corr = np.corrcoef(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
+        # corr = sstats.spearmanr(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
 
-        #result['firingstats']['trial_map'] = gauss_smooth(result['firingstats']['trial_map'],(0,2))
+        #self.firingstats['trial_map'] = gauss_smooth(self.firingstats['trial_map'],(0,2))
         corr[np.isnan(corr)] = 0
         ordered_corr,res_order,res_linkage = compute_serial_matrix(-(corr-1),'average')
         cluster_idx = sp.cluster.hierarchy.cut_tree(res_linkage,height=0.5)
@@ -415,7 +415,7 @@ class PC_detection_inference:
         c_trial = np.where((c_counts>self.para['trials_min_count']) & (c_counts>(self.para['trials_min_fraction']*self.behavior['trials']['ct'])))[0]
         # print('cluster',corr)
         for (i,t) in enumerate(c_trial):
-            fmap = gauss_smooth(np.nanmean(result['firingstats']['trial_map'][cluster_idx.T[0]==t,:],0),2)
+            fmap = gauss_smooth(np.nanmean(self.firingstats['trial_map'][cluster_idx.T[0]==t,:],0),2)
             # baseline = np.percentile(fmap[fmap>0],20)
             baseline = np.nanpercentile(fmap[fmap>0],30)
             fmap2 = np.copy(fmap)
@@ -425,7 +425,7 @@ class PC_detection_inference:
             Ns_baseline = (fmap2>0).sum()
             noise = np.sqrt((fmap2**2).sum()/(Ns_baseline*(1-2/np.pi)))
             if (fmap>(baseline+4*noise)).sum()>5:
-                result['firingstats']['trial_field'][i,:] = (cluster_idx.T==t)
+                self.firingstats['trial_field'][i,:] = (cluster_idx.T==t)
 
         testing = False
         if testing and self.para['plt_bool']:
@@ -435,7 +435,7 @@ class PC_detection_inference:
             plt.clim([0,1])
             plt.colorbar()
             plt.subplot(122)
-            corr = sstats.spearmanr(gauss_smooth(result['firingstats']['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
+            corr = sstats.spearmanr(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
             # print(corr)
             ordered_corr,res_order,res_linkage = compute_serial_matrix(-(corr-1),'average')
             # Z = sp.cluster.hierarchy.linkage(-(corr-1),method='average')
@@ -450,38 +450,37 @@ class PC_detection_inference:
                 if i<25:
                     col = color_t[int(res_linkage[i,3]-2)]
                     plt.subplot(5,5,i+1)
-                    plt.plot(np.linspace(0,self.para['L_track'],self.para['nbin']),gauss_smooth(result['firingstats']['trial_map'][r,:],smooth*self.para['nbin']/self.para['L_track']),color=col)
+                    plt.plot(np.linspace(0,self.para['L_track'],self.para['nbin']),gauss_smooth(self.firingstats['trial_map'][r,:],smooth*self.para['nbin']/self.para['L_track']),color=col)
                     plt.ylim([0,20])
                     plt.title('trial # %d'%r)
             plt.show(block=False)
-        return result
+        return
 
 
     def run_nestedSampling(self,firingstats,firingmap,f):
 
+        # print('\n\n inputs:')
+        # print(firingmap,self.para['bin_array'],firingstats['parNoise'],f)
+
         hbm = HierarchicalBayesModel(firingmap,self.para['bin_array'],firingstats['parNoise'],f)
 
         ### test models with 0 vs 1 fields
-        #paramnames = [self.para['names'][0]]
-        #for ff in range(f):
-        #paramnames.extend(self.para['names'][1:]*f)
 
-
-        sampler = 'dynesty'  # define, whether ultranest or dynesty should be used
+        sampler = 'ultranest'  # define, whether ultranest or dynesty should be used
+        # sampler = 'dynesty'  # define, whether ultranest or dynesty should be used
         
         if sampler=='dynesty':
         
             my_prior_transform = hbm.transform_p
             my_likelihood = hbm.set_logl_func(vectorized=False)
-
-            # pool = multiprocessing.pool.Pool()
-            # pool = get_context("spawn").Pool(8)
-            # pool.size = 8
-
-            sampler = DynamicNestedSampler(my_likelihood,my_prior_transform,1+3*f,sample='slice')
-            # print(sampler)
-
-            sampler.run_nested()
+            print('running nested sampling')
+            with dypool.Pool(8,my_likelihood,my_prior_transform) as pool:
+                sampler = DynamicNestedSampler(pool.loglike,pool.prior_transform,1+3*f,
+                        pool=pool,
+                        periodic=[3] if f>0 else None,
+                        # sample='slice'
+                    )
+                sampler.run_nested()
 
             sampling_result = sampler.results
             print(sampling_result)
@@ -493,8 +492,11 @@ class PC_detection_inference:
             my_prior_transform = hbm.transform_p
             my_likelihood = hbm.set_logl_func()
 
-            sampler = ultranest.ReactiveNestedSampler(paramnames, my_likelihood, my_prior_transform,wrapped_params=hbm.pTC['wrap'],vectorized=True,num_bootstraps=20)#,log_dir='/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/PC_analysis/test_ultra')   ## set up sampler...
+            paramnames = list((self.para['names'][0],) + tuple(self.para['names'][1:]*f))
+            # paramnames = [self.para['names'][0]]
+            # paramnames.extend(self.para['names'][1:]*f)
 
+            sampler = ultranest.ReactiveNestedSampler(paramnames, my_likelihood, my_prior_transform,wrapped_params=hbm.pTC['wrap'],vectorized=True,num_bootstraps=20)#,log_dir='/home/wollex/Data/Documents/Uni/2016-XXXX_PhD/Japan/Work/Programs/PC_analysis/test_ultra')   ## set up sampler...
 
             num_samples = 400
             if f>1:
@@ -506,7 +508,7 @@ class PC_detection_inference:
         #print('nested sampler done, time: %5.3g'%(t_end-t_start))
 
         Z = [sampling_result['logz'],sampling_result['logzerr']]    ## store evidences
-        field = {'Bayes_factor':np.zeros(2)*np.NaN}
+        field = {'Bayes_factor':np.full(2,np.NaN)}
         if f > 0:
 
             fields_tmp = self.detect_modes_from_posterior(sampler)
@@ -516,46 +518,8 @@ class PC_detection_inference:
                     field[key] = fields_tmp[key]
                 field['Bayes_factor'][0] = Z[0]-self.tmp['Z'][0]
                 field['Bayes_factor'][1] = np.sqrt(Z[1]**2 + self.tmp['Z'][1]**2)
-            else:
-                field['Bayes_factor'] = np.zeros(2)*np.NaN
+            
         self.tmp['Z'] = Z
-        #if f==2:
-            ##try:
-            #if np.any(~np.isnan(fields_tmp['posterior_mass'])):
-
-            #if np.any(~np.isnan(result['fields']['posterior_mass'])):
-                #f_major = np.nanargmax(result['fields']['posterior_mass'])
-                #theta_major = result['fields']['parameter'][f_major,3,0]
-                #dTheta = np.abs(np.mod(theta_major-fields_tmp['parameter'][:,3,0]+self.para['nbin']/2,self.para['nbin'])-self.para['nbin']/2)
-                #if result['fields']['Bayes_factor'][f-1,0] > 0:
-                #for key in fields_tmp.keys():
-                    #result['fields'][key] = fields_tmp[key]
-                #result['fields']['major'] = np.nanargmin(dTheta)
-            #else:
-                #if result['fields']['Bayes_factor'][f-1,0] > 0:
-                #for key in fields_tmp.keys():
-                    #result['fields'][key] = fields_tmp[key]
-                #result['fields']['major'] = np.NaN
-
-            #print('peaks to compare:')
-            #print(result['fields']['parameter'][:,3,0])
-            #print(fields_tmp['parameter'][:,3,0])
-            #print(dTheta)
-            #if np.any(dTheta<(self.para['nbin']/10)):
-
-            #else:
-                #print('peak detection for 2-field model was not in line with 1-field model')
-                #print(result['fields']['parameter'][:,3,0])
-                #print(fields_tmp['parameter'][:,3,0])
-                #result['status']['Bayes_factor'][-1,:] = np.NaN
-            #return result, sampler
-            #except:
-            #pass
-            #return result, sampler
-        #else:
-
-        #if result['status']['Bayes_factor'][f-1,0]<=0:
-            #break_it = True
 
         return field
 
@@ -964,8 +928,7 @@ class PC_detection_inference:
 
         ## get data
         # pathDat = os.path.join(self.para['pathSession'],'results_redetect.mat')
-        pathDat = self.para['pathSession']
-        ld = load_dict_from_hdf5(pathDat)
+        ld = load_dict_from_hdf5(self.para['pathData'])
         # ld = loadmat(pathDat,variable_names=['S','C'])
 
         C = ld['C'][self.para['n'],:]
@@ -1030,9 +993,9 @@ class PC_detection_inference:
             ax_loc.scatter(t_active,pos_active,s=(S_active/S.max())**2*10+0.1,color='r',zorder=10)
             ax_loc.scatter(t_inactive,pos_inactive,s=(S_inactive/S.max())**2*10+0.1,color='k',zorder=10)
         ax_loc.bar(t_stop,np.ones(len(t_stop))*self.para['L_track'],width=1/15,color=[0.9,0.9,0.9],zorder=0)
-        ax_loc.fill_between([self.behavior['trials']['start_t'][n_trial],self.behavior['trials']['start_t'][n_trial+1]],[0,0],[self.para['L_track'],self.para['L_track']],color=[0,0,1,0.2],zorder=1)
+        ax_loc.fill_between([self.behavior['trials']['start_t'][n_trial],self.behavior['trials']['start_t'][n_trial+1]],[0,0],[self.para['nbin'],self.para['nbin']],color=[0,0,1,0.2],zorder=1)
 
-        ax_loc.set_ylim([0,self.para['L_track']])
+        ax_loc.set_ylim([0,self.para['nbin']])
         ax_loc.set_xlim([t_start,t_end])
         ax_loc.set_xlabel('time [s]')
         ax_loc.set_ylabel('position [bins]')
@@ -1057,12 +1020,12 @@ class PC_detection_inference:
         ax_acorr.spines['top'].set_visible(False)
 
         # i = random.randint(0,self.para['nbin']-1)
-        i=72
+        i=32
         #ax1 = plt.subplot(211)
         #for i in range(3):
-        #trials = np.where(self.result['firingstats']['trial_field'][i,:])[0]
+        #trials = np.where(self.self.firingstats['trial_field'][i,:])[0]
         #if len(trials)>0:
-            #fr_mu_trial = gauss_smooth(np.nanmean(self.result['firingstats']['trial_map'][trials,:],0),2)
+            #fr_mu_trial = gauss_smooth(np.nanmean(self.self.firingstats['trial_map'][trials,:],0),2)
             #ax1.barh(self.para['bin_array'],fr_mu_trial,alpha=0.5,height=1,label='$\\bar{\\nu}$')
 
         ax1.barh(self.para['bin_array'],fr_mu,facecolor='b',alpha=0.2,height=1,label='$\\bar{\\nu}$')
@@ -1160,3 +1123,57 @@ class PC_detection_inference:
             pathSv = os.path.join(self.para['pathFigs'],'PC_analysis_HBM.png')
             plt.savefig(pathSv)
             print('Figure saved @ %s'%pathSv)
+    
+
+
+    def plt_results(self,t=0):
+    
+        #print('for display: draw tuning curves from posterior distribution and evaluate TC-value for each bin. then, each bin has distribution of values and can be plotted! =)')
+        style_arr = ['--','-']
+        #col_arr = []
+        #fig,ax = plt.subplots(figsize=(5,3),dpi=150)
+
+        hbm = HierarchicalBayesModel(self.firingstats['map'],self.para['bin_array'],self.firingstats['parNoise'],0)
+
+        plt.figure()
+        ax = plt.axes([0.6,0.625,0.35,0.25])
+
+        fmap = np.nansum(self.firingstats['trial_map'][self.firingstats['trial_field'][0],:],axis=0)
+        ax.bar(self.para['bin_array'],self.firingstats['map'],facecolor='b',width=1,alpha=0.2)
+        ax.bar(self.para['bin_array'],fmap,facecolor='r',width=1,alpha=0.2)
+        ax.errorbar(self.para['bin_array'],self.firingstats['map'],self.firingstats['CI'],ecolor='r',linestyle='',fmt='',elinewidth=0.3)#,label='$95\\%$ confidence')
+
+        ax.plot(self.para['bin_array'],hbm.TC(np.array([self.fields['parameter'][t,0,0]])),'k',linestyle='--',linewidth=1)#,label='$log(Z)=%4.1f\\pm%4.1f$ (non-coding)'%(self.status['Z'][0,0],self.status['Z'][0,1]))
+
+        #try:
+        #print(self.fields['nModes'])
+        #for c in range(min(2,self.fields['nModes'])):
+        #if self.fields['nModes']>1:
+        #if c==0:
+        #label_str = '(mode #%d)\t$log(Z)=%4.1f\\pm%4.1f$'%(c+1,self.status['Z'][1,0],self.status['Z'][1,1])
+        #else:
+        
+        label_str = '(mode #%d)'%(t+1)
+        #else:
+        #label_str = '$log(Z)=%4.1f\\pm%4.1f$ (coding)'%(self.status['Z'][1,0],self.status['Z'][1,1])
+
+        para = self.fields['parameter'][t,...]
+
+        para[2,:] *= self.para['nbin']/self.para['L_track']
+        para[3,:] *= self.para['nbin']/self.para['L_track']
+
+        ax.plot(self.para['bin_array'],hbm.TC(para[:,0]),'r',linestyle='-',linewidth=0.5+self.fields['posterior_mass'][t]*2,label=label_str)
+        #except:
+            #1
+        #ax.plot(self.para['bin_array'],hbm.TC(par_results[1]['mean']),'r',label='$log(Z)=%5.3g\\pm%5.3g$'%(par_results[1]['Z'][0],par_results[1]['Z'][1]))
+        ax.legend(title='evidence',fontsize=8,loc='upper left',bbox_to_anchor=[0.05,1.4])
+        ax.set_xlabel('Location [bin]')
+        ax.set_ylabel('$\\bar{\\nu}$')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        plt.tight_layout()
+        if self.para['plt_sv']:
+            pathSv = os.path.join(self.para['pathFigs'],'PC_analysis_fit_results.png')
+            plt.savefig(pathSv)
+            print('Figure saved @ %s'%pathSv)
+        plt.show(block=False)

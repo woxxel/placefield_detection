@@ -1,4 +1,4 @@
-import os, random, h5py, time, math, cmath, copy, importlib, warnings, pickle, sys
+import os, time, math, warnings, pickle
 # sys.path.append('./CaImAn')
 
 from caiman.utils.utils import load_dict_from_hdf5
@@ -6,7 +6,7 @@ from caiman.utils.utils import load_dict_from_hdf5
 from multiprocessing import get_context
 
 # from skimage import measure
-import scipy as sp
+# import scipy as sp
 # import scipy.io as sio
 # from scipy.io import savemat, loadmat
 
@@ -21,8 +21,8 @@ import numpy as np
 ### Documentation on https://johannesbuchner.github.io/UltraNest/performance.html
 import logging
 
-from .utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
-from .utils_data import detection_parameters, build_struct_PC_results
+from .utils.utils import _hsm, get_reliability, get_firingrate, pickleData
+from .utils.utils_data import detection_parameters, build_struct_PC_results
 # from .utils_analysis import define_active
 
 from .PC_detection_inference import *
@@ -79,18 +79,15 @@ class PC_detection:
         self.para['modes']['activity'] = mode_activity
         self.tmp = {}   ## dict to store some temporary variables in
 
-        # if (result['status']['SNR'] < 2) | (results['r_value'] < 0):
+        # if (result.status['SNR'] < 2) | (results['r_value'] < 0):
         #     print('component not considered to be proper neuron')
         #     return
 
         if not (specific_n is None):
             #self.S = S[specific_n,:]
             self.para['n'] = specific_n
-            result = self.PC_detect.run_detection(self.activity['S'][specific_n,:])
-
-            if self.para['plt_bool']:
-                self.plt_results(result)
-            return result
+            self.PC_detect.run_detection(self.activity['S'][specific_n,:])
+            return
         
         # if rerun:
         #     if artificial:
@@ -146,6 +143,7 @@ class PC_detection:
         ## can't this be done more efficiently?
         results = build_struct_PC_results(self.nCells,self.para['nbin'],self.behavior['trials']['ct'],1+len(self.para['CI_arr']))
 
+        # return result_tmp,results
         for n in range(self.nCells):
             for key_type in result_tmp[0].keys():
                 for key in result_tmp[0][key_type].keys():
@@ -386,60 +384,6 @@ class PC_detection:
             Icorr[L] = -1/2*rate * np.log2(1 - fC_cross/(rate+fC_cross)).sum()
 
         return Icorr.mean(), Icorr.std()
-
-
-
-    def plt_results(self,result,t=0):
-    
-        #print('for display: draw tuning curves from posterior distribution and evaluate TC-value for each bin. then, each bin has distribution of values and can be plotted! =)')
-        style_arr = ['--','-']
-        #col_arr = []
-        #fig,ax = plt.subplots(figsize=(5,3),dpi=150)
-
-        hbm = HierarchicalBayesModel(result['firingstats']['map'],self.para['bin_array'],result['firingstats']['parNoise'],0)
-
-        plt.figure()
-        ax = plt.axes([0.6,0.625,0.35,0.25])
-
-        fmap = np.nansum(result['firingstats']['trial_map'][result['firingstats']['trial_field'][0],:],axis=0)
-        ax.bar(self.para['bin_array'],result['firingstats']['map'],facecolor='b',width=1,alpha=0.2)
-        ax.bar(self.para['bin_array'],fmap,facecolor='r',width=1,alpha=0.2)
-        ax.errorbar(self.para['bin_array'],result['firingstats']['map'],result['firingstats']['CI'],ecolor='r',linestyle='',fmt='',elinewidth=0.3)#,label='$95\\%$ confidence')
-
-        ax.plot(self.para['bin_array'],hbm.TC(np.array([result['fields']['parameter'][t,0,0]])),'k',linestyle='--',linewidth=1)#,label='$log(Z)=%4.1f\\pm%4.1f$ (non-coding)'%(result['status']['Z'][0,0],result['status']['Z'][0,1]))
-
-        #try:
-        #print(result['fields']['nModes'])
-        #for c in range(min(2,result['fields']['nModes'])):
-        #if result['fields']['nModes']>1:
-        #if c==0:
-        #label_str = '(mode #%d)\t$log(Z)=%4.1f\\pm%4.1f$'%(c+1,result['status']['Z'][1,0],result['status']['Z'][1,1])
-        #else:
-        
-        label_str = '(mode #%d)'%(t+1)
-        #else:
-        #label_str = '$log(Z)=%4.1f\\pm%4.1f$ (coding)'%(result['status']['Z'][1,0],result['status']['Z'][1,1])
-
-        para = result['fields']['parameter'][t,...]
-
-        para[2,:] *= self.para['nbin']/self.para['L_track']
-        para[3,:] *= self.para['nbin']/self.para['L_track']
-
-        ax.plot(self.para['bin_array'],hbm.TC(para[:,0]),'r',linestyle='-',linewidth=0.5+result['fields']['posterior_mass'][t]*2,label=label_str)
-        #except:
-            #1
-        #ax.plot(self.para['bin_array'],hbm.TC(par_results[1]['mean']),'r',label='$log(Z)=%5.3g\\pm%5.3g$'%(par_results[1]['Z'][0],par_results[1]['Z'][1]))
-        ax.legend(title='evidence',fontsize=8,loc='upper left',bbox_to_anchor=[0.05,1.4])
-        ax.set_xlabel('Location [bin]')
-        ax.set_ylabel('$\\bar{\\nu}$')
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        plt.tight_layout()
-        if self.para['plt_sv']:
-            pathSv = os.path.join(self.para['pathFigs'],'PC_analysis_fit_results.png')
-            plt.savefig(pathSv)
-            print('Figure saved @ %s'%pathSv)
-        plt.show(block=False)
 
 
     def plt_data(self,n,S=None,results=None,ground_truth=None,activity_mode='calcium',sv=False,suffix=''):
