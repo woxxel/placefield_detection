@@ -12,7 +12,7 @@ from matplotlib import rc
 
 from caiman.utils.utils import load_dict_from_hdf5
 
-from dynesty import DynamicNestedSampler, pool as dypool, utils, plotting as dyplot
+# from dynesty import DynamicNestedSampler, pool as dypool, utils, plotting as dyplot
 
 import ultranest
 from ultranest.plot import cornerplot
@@ -69,7 +69,6 @@ class PC_detection_inference:
 
         ### get overall as well as trial-specific activity and firingmap stats
         self.prepare_activity()
-        
         if self.firingstats['rate']==0:
             print('no activity for this neuron')
             return self.return_results()
@@ -82,7 +81,6 @@ class PC_detection_inference:
             MI_tmp = self.test_MI()
             for key in MI_tmp.keys():
                 self.status[key] = MI_tmp[key]
-        
         #print('time taken (information): %.4f'%(time.time()-t_start))
 
 

@@ -1,9 +1,8 @@
 import os, time, math, warnings, pickle
-# sys.path.append('./CaImAn')
 
 from caiman.utils.utils import load_dict_from_hdf5
-# import multiprocessing as mp
-from multiprocessing import get_context
+import multiprocessing as mp
+# from multiprocessing import get_context
 
 # from skimage import measure
 # import scipy as sp
@@ -119,21 +118,22 @@ class PC_detection:
         nCells_process = len(idx_process)
 
         
-        print('in class para:',self.PC_detect.para)
+        # print('in class para:',self.PC_detect.para)
         # if nCells_process:
 
         print('run detection on %d neurons'%nCells_process)
         
         result_tmp = []
         if self.para['nP'] > 0:
-            pool = get_context("spawn").Pool(self.para['nP'])
             batchSz = 500
             nBatch = nCells_process//batchSz
+            with mp.Pool(self.para['nP']) as pool:
+                # pool = get_context("spawn").Pool(self.para['nP'])
 
-            for i in range(nBatch+1):
-                idx_batch = idx_process[i*batchSz:min(nCells_process,(i+1)*batchSz)]
-                result_tmp.extend(pool.starmap(self.PC_detect.run_detection,zip(self.activity['S'][idx_batch,:])))
-                print('\n\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs\n'%(min(nCells_process,(i+1)*batchSz),nCells_process,time.time()-t_start))
+                for i in range(nBatch+1):
+                    idx_batch = idx_process[i*batchSz:min(nCells_process,(i+1)*batchSz)]
+                    result_tmp.extend(pool.starmap(self.PC_detect.run_detection,zip(self.activity['S'][idx_batch,:])))
+                    print('\n\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs\n'%(min(nCells_process,(i+1)*batchSz),nCells_process,time.time()-t_start))
         else:
             for n0,n in enumerate(idx_process):
                 result_tmp.append(self.PC_detect.run_detection(self.activity['S'][n,:]))
@@ -174,8 +174,10 @@ class PC_detection:
             return results
         else:
             print('saving results...')
-            for key in ['status','fields','firingstats']:
-                pickleData(results[key],self.para[f'pathResults_{key}'],mode='save')
+            pickleData(results,self.para[f'pathResults'],mode='save')
+            
+            # for key in ['status','fields','firingstats']:
+            #     pickleData(results[key],self.para[f'pathResults_{key}'],mode='save')
 
             return
         # else:

@@ -834,11 +834,15 @@ def get_reliability(trial_map,map,field,t):
 
     return rel, field_max, trial_field
 
-def get_firingrate(S,f=15,sd_r=1):
+def get_firingrate(S,f=15,sd_r=1,Ns_thr=10):
     '''
         calculates the firing rate from a an array of spike probabilities ('S' from CaImAn) 
         by thresholding data according to multiples sd_r of estimated variance
 
+        Ns_thr:
+          - minimum number of non-zero entries in S
+
+        
         returns
             - firing rate (in spikes/sec, depending on provided framerate f)
             - calculated spiking threshold
@@ -848,7 +852,7 @@ def get_firingrate(S,f=15,sd_r=1):
 
     S[S<S.max()*10**(-4)]=0
     Ns = (S>0).sum()
-    if Ns==0:
+    if Ns<Ns_thr:
         return 0,np.NaN,np.zeros_like(S)
     else:
         # estimate noise level by using median value (assuming most entries are not actual spikes)
