@@ -7,14 +7,10 @@
 
 '''
 
-import os, pickle, cmath, time, cv2, h5py
-import scipy as sp
-import scipy.stats as sstats
-from scipy import signal, cluster
+import os, pickle
+from scipy import signal
 import numpy as np
 import matplotlib.pyplot as plt
-from fastcluster import linkage
-from scipy.spatial.distance import squareform
 
 from .utils import gauss_smooth
 
@@ -124,43 +120,95 @@ def get_performance(pathMouse,s_arr,rw_pos=[50,70],rw_delay=0,f=15,plot_bool=Fal
 
     return dataStore
 
-def define_active(pathSession,f=15,plot_bool=False):
+def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=20,f=15.,T=None):
+    '''
+        loads behavior from specified path
+        Requires file to contain a dictionary with values for each frame, aligned to imaging data:
+            * time      - time in seconds
+            * position  - mouse position
+            * active    - boolean array defining active frames (included in analysis)
 
-    data = {}
-    pathBH = None
-    for file in os.listdir(pathSession):
-    #   if file.endswith("aligned.mat"):
-      if file.endswith("aligned_behavior.pkl"):
-          pathBH = os.path.join(pathSession, file)
-    if pathBH is None:
-        return
-    
+    '''
     ### load data
-    with open(pathBH,'rb') as f:
-        data = pickle.load(f)
+    with open(pathBehavior,'rb') as f_open:
+        loadData = pickle.load(f_open)
 
-    # min_val,max_val = np.nanpercentile(data['bin_position'],(0.1,99.9))
-    # loc_dist = max_val - min_val
-
-    # ## define trials    
-    # data['trials'] = {}
-    # data['trials']['start'] = np.append(0,np.where(np.diff(data['bin_position'])<(-loc_dist/2))[0] + 1)
-
-    # ## remove half trials from data
-    # if not (data['bin_position'][0] < 10):
-    #     data['active'][:max(0,data['trials']['start'][0])] = False
-
-    # if not (data['bin_position'][-1] >= 90):
-    #     data['active'][data['trials']['start'][-1]:] = False
+    if T is None:
+        T = loadData['time'].shape[0]
     
-    # pos_active = data['bin_position'][data['active']]
-    # data['trials']['start_active'] = np.append(0,np.where(np.diff(pos_active)<(-loc_dist/2))[0] + 1)
-    # data['trials']['start_active_t'] = data['time'][data['active']][data['trials']['start_active']]
-    # data['trials']['ct'] = len(data['trials']['start_active'])
+    ## first, handing over some general data
+    data = {}
+    for key in ['active','time','velocity']:
+        data[key] = loadData[key]
+    # data['active'] = sp.ndimage.binary_closing(data['active'],np.ones(30),border_value=True)
+    position = loadData['position']
+    print('actives:',data['active'].sum())
+    
+    ## apply binning
+    min_val,max_val = np.nanpercentile(position,(0.1,99.9)) # this could/should be done in data aligning
+    environment_length = max_val - min_val
 
-    if plot_bool:
-        plt.figure(dpi=300)
-        plt.plot(data['time'],data['position'],'r.',markersize=1,markeredgecolor='none')
-        plt.plot(data['time'][data['active']],data['position'][data['active']],'k.',markersize=2,markeredgecolor='none')
-        plt.show(block=False)
+    binpos = np.minimum((position - min_val) / environment_length * nbin,nbin-1).astype('int')
+    bin_array = np.linspace(0,nbin,nbin+1)-0.5
+
+    ## define dwelltimes
+    data['dwelltime'] = np.histogram(
+            binpos[data['active']],
+            bin_array
+        )[0]/f
+
+
+    ## define trials
+    data['trials'] = {}
+    trial_start = np.hstack([0,np.where(np.diff(position)<(-environment_length/2))[0] + 1])
+
+    ## remove partial trials from data (if fraction of length < partial_threshold)
+    partial_threshold = 0.6
+    if not (binpos[0] < nbin*(1-partial_threshold)):
+        print('remove partial first trial @',trial_start[0])
+        data['active'][:max(0,trial_start[0])] = False
+
+    if not (binpos[-1] >= nbin*partial_threshold):
+        print('remove partial last trial @',trial_start[-1])
+        data['active'][trial_start[-1]:] = False
+
+    data['nFrames'] = np.count_nonzero(data['active'])
+
+    ### preparing data for active periods, only
+
+    ## defining arrays of active time periods
+    data['binpos'] = binpos[data['active']]
+    data['time'] = data['time'][data['active']]
+    data['velocity'] = data['velocity'][data['active']]
+
+    binpos_coarse = np.minimum((position-min_val) / environment_length * nbin_coarse,nbin_coarse-1).astype('int')
+    data['dwelltime_coarse'] = np.histogram(
+            binpos_coarse[data['active']],
+            np.linspace(0,nbin_coarse,nbin_coarse+1)-0.5
+        )[0]/f
+    data['binpos_coarse'] = binpos_coarse[data['active']]
+
+    ## define start points
+    data['trials']['start'] = np.hstack([0,np.where(np.diff(data['binpos'])<(-nbin/2))[0] + 1,data['active'].sum()])
+    data['trials']['start_t'] = data['time'][data['trials']['start'][:-1]]
+    data['trials']['ct'] = len(data['trials']['start']) - 1
+
+
+    ## getting trial-specific behavior data
+    data['trials']['dwelltime'] = np.zeros((data['trials']['ct'],nbin))
+    data['trials']['nFrames'] = np.zeros(data['trials']['ct'],'int')#.astype('int')
+
+    data['trials']['binpos'] = {}
+    for t in range(data['trials']['ct']):
+        data['trials']['binpos'][t] = data['binpos'][data['trials']['start'][t]:data['trials']['start'][t+1]]
+        data['trials']['dwelltime'][t,:] = np.histogram(data['trials']['binpos'][t],bin_array)[0]/f
+        data['trials']['nFrames'][t] = len(data['trials']['binpos'][t])
+    
     return data
+
+    # if plot_bool:
+    #     plt.figure(dpi=300)
+    #     plt.plot(data['time'],data['position'],'r.',markersize=1,markeredgecolor='none')
+    #     plt.plot(data['time'][data['active']],data['position'][data['active']],'k.',markersize=2,markeredgecolor='none')
+    #     plt.show(block=False)
+    # return data

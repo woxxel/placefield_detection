@@ -2,18 +2,18 @@
 
   get_nFolder   get number of folders in path
   pathcat       attach strings to create proper paths
-  _hsm          half sampling mode to obtain baseline
+  calculate_hsm          half sampling mode to obtain baseline
 
 
 '''
 
-import os, pickle, cmath, time, cv2, h5py
+import os, pickle, cmath, cv2
 import scipy as sp
 import scipy.stats as sstats
 from scipy import signal, cluster
 import numpy as np
 import matplotlib.pyplot as plt
-from fastcluster import linkage
+# from fastcluster import linkage
 from scipy.spatial.distance import squareform
 
 
@@ -43,13 +43,13 @@ def find_modes(data,axis=None,sort_it=True):
     if sort_it:
       data = np.sort(data)
 
-    dataMode = _hsm(data)
+    dataMode = calculate_hsm(data)
 
   return dataMode
 
 
 
-def _hsm(data,sort_it=True):
+def calculate_hsm(data,sort_it=True):
   ### adapted from caiman
   ### Robust estimator of the mode of a data set using the half-sample mode.
   ### versionadded: 1.0.3
@@ -87,7 +87,7 @@ def _hsm(data,sort_it=True):
       if w < wMin:
         wMin = w
         j = i
-    return _hsm(data[j:j + N])
+    return calculate_hsm(data[j:j + N])
 
 
 def periodic_distr_distance(p1,p2,nbin,L_track,mu1=None,mu2=None,N_bs=1000,mode='wasserstein'):

@@ -5,7 +5,6 @@
 '''
 import os
 import numpy as np
-from .get_t_measures import *
 
 class detection_parameters:
     

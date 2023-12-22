@@ -1,28 +1,16 @@
-import os, time, math, warnings, pickle
+import os, time, math, warnings
 
 from caiman.utils.utils import load_dict_from_hdf5
 import multiprocessing as mp
-# from multiprocessing import get_context
-
-# from skimage import measure
-# import scipy as sp
-# import scipy.io as sio
-# from scipy.io import savemat, loadmat
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 
-#from scipy.signal import savgol_filter
-
-### UltraNest toolbox ###
-### from https://github.com/JohannesBuchner/UltraNest
-### Documentation on https://johannesbuchner.github.io/UltraNest/performance.html
 import logging
 
-from .utils.utils import _hsm, get_reliability, get_firingrate, pickleData
-from .utils.utils_data import detection_parameters, build_struct_PC_results
-# from .utils_analysis import define_active
+from .utils import calculate_hsm, get_reliability, get_firingrate, pickleData
+from .utils import detection_parameters, build_struct_PC_results
+from .utils import prepare_behavior
 
 from .PC_detection_inference import *
 from .HierarchicalBayesInference import *
@@ -33,7 +21,7 @@ logger = logging.getLogger("ultranest")
 logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.WARNING)
 
-
+print('bla')
 class PC_detection:
 
     def __init__(self,pathData,pathBehavior,pathResults,nbin=100,
@@ -57,7 +45,7 @@ class PC_detection:
 
         self.para = paramsClass.params
 
-        self.load_behavior(pathBehavior)       ## load and process behavior
+        self.behavior = prepare_behavior(pathBehavior)       ## load and process behavior
         self.load_neuron_data()
 
         self.PC_detect = PC_detection_inference(self.behavior,self.para)
@@ -184,94 +172,6 @@ class PC_detection:
         #     print('nothing here to process')
 
 
-    # def PC_detect(self,S,SNR=None,r_value=None):
-        
-
-    def load_behavior(self,pathBehavior,T=None):
-        '''
-            loads behavior from specified path
-            Requires file to contain a dictionary with values for each frame, aligned to imaging data:
-                * time      - time in seconds
-                * position  - mouse position
-                * active    - boolean array defining active frames (included in analysis)
-
-        '''
-        ### load data
-        with open(pathBehavior,'rb') as f:
-            loadData = pickle.load(f)
-
-        if T is None:
-            T = loadData['time'].shape[0]
-        
-        ## first, handing over some general data
-        data = {}
-        for key in ['active','time','position']:
-            data[key] = loadData[key]
-        # data['active'] = sp.ndimage.binary_closing(data['active'],np.ones(30),border_value=True)
-        print('actives:',data['active'].sum())
-
-        ## apply binning
-        min_val,max_val = np.nanpercentile(data['position'],(0.1,99.9)) # this could/should be done in data aligning
-        environment_length = max_val - min_val
-
-        data['binpos'] = np.minimum((data['position'] - min_val) / environment_length * self.para['nbin'],self.para['nbin']-1).astype('int')
-        data['binpos_coarse'] = np.minimum((data['position']-min_val) / environment_length * self.para['nbin_coarse'],self.para['nbin_coarse']-1).astype('int')
-
-
-        ## define dwelltimes
-        data['dwelltime'] = np.histogram(
-                data['binpos'][data['active']],
-                np.linspace(0,self.para['nbin'],self.para['nbin']+1)-0.5
-            )[0]/self.para['f']
-        
-        data['dwelltime_coarse'] = np.histogram(
-                data['binpos_coarse'][data['active']],
-                np.linspace(0,self.para['nbin_coarse'],self.para['nbin_coarse']+1)-0.5
-            )[0]/self.para['f']
-
-
-        ## define trials
-        data['trials'] = {}
-        trial_start = np.hstack([0,np.where(np.diff(data['position'])<(-environment_length/2))[0] + 1])
-
-        ## remove partial trials from data (if fraction of length < partial_threshold)
-        partial_threshold = 0.6
-        if not (data['binpos'][0] < self.para['nbin']*(1-partial_threshold)):
-            print('remove partial first trial @',trial_start[0])
-            data['active'][:max(0,trial_start[0])] = False
-
-        if not (data['binpos'][-1] >= self.para['nbin']*partial_threshold):
-            print('remove partial last trial @',trial_start[-1])
-            data['active'][trial_start[-1]:] = False
-
-        data['nFrames'] = np.count_nonzero(data['active'])
-
-        ### preparing data for active periods, only
-
-        ## defining arrays of active time periods
-        data['binpos_active'] = data['binpos'][data['active']]
-        data['binpos_coarse_active'] = data['binpos_coarse'][data['active']]
-        data['time_active'] = data['time'][data['active']]
-
-        ## define start points
-        data['trials']['start'] = np.hstack([0,np.where(np.diff(data['binpos_active'])<(-self.para['nbin']/2))[0] + 1,data['active'].sum()])
-        data['trials']['start_t'] = data['time'][data['active']][data['trials']['start'][:-1]]
-        data['trials']['ct'] = len(data['trials']['start']) - 1
-
-
-        ## getting trial-specific behavior data
-        data['trials']['dwelltime'] = np.zeros((data['trials']['ct'],self.para['nbin']))
-        data['trials']['nFrames'] = np.zeros(data['trials']['ct'],'int')#.astype('int')
-
-        data['trials']['binpos'] = {}
-        for t in range(data['trials']['ct']):
-            data['trials']['binpos'][t] = data['binpos_active'][data['trials']['start'][t]:data['trials']['start'][t+1]]
-            data['trials']['dwelltime'][t,:] = np.histogram(data['trials']['binpos'][t],self.para['bin_array_centers'])[0]/self.para['f']
-            data['trials']['nFrames'][t] = len(data['trials']['binpos'][t])
-        
-        self.behavior = data
-#        return data
-
     def load_neuron_data(self):        
         ## load activity data from CaImAn results
         ld = load_dict_from_hdf5(self.para['pathData'])
@@ -324,7 +224,7 @@ class PC_detection:
         C_cross = np.zeros((self.para['nbin'],nlag))
         for x in range(self.para['nbin']):
             for t in range(self.behavior['trials']['ct']):
-                idx_x = np.where(self.behavior['trials']['trial'][t]['binpos_active']==x)[0]
+                idx_x = np.where(self.behavior['trials']['trial'][t]['binpos']==x)[0]
                 #print(idx_x)
                 if len(idx_x):
                     i = self.behavior['trials']['frame'][t] + idx_x[0]    ## find entry to position x in trial t
@@ -559,7 +459,7 @@ def get_spikeNr(data):
     if np.count_nonzero(data)==0:
         return 0,np.NaN,np.NaN
     else:
-        md = _hsm(data,True);       #  Find the mode
+        md = calculate_hsm(data,True);       #  Find the mode
 
         # only consider values under the mode to determine the noise standard deviation
         ff1 = data - md;
