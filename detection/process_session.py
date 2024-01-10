@@ -3,7 +3,7 @@ import os, time, math, warnings
 from caiman.utils.utils import load_dict_from_hdf5
 import multiprocessing as mp
 
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 import numpy as np
 
 import logging
@@ -21,7 +21,6 @@ logger = logging.getLogger("ultranest")
 logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.WARNING)
 
-print('bla')
 class PC_detection:
 
     def __init__(self,pathData,pathBehavior,pathResults,nbin=100,

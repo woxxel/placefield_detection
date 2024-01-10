@@ -282,40 +282,6 @@ def ecdf(x,p=None):
   return x,y
 
 
-
-def extend_dict(D,n,D2=None,dim=0,exclude=[]):
-  if not bool(D):
-    return D2
-  for key in D.keys():
-    if not (key in exclude):
-      if type(D[key]) is dict:
-        if not (D2 is None):
-          extend_dict(D[key],n,D2[key],dim)
-        else:
-          extend_dict(D[key],n,None,dim)
-      else:
-        dims = np.array(D[key].shape[:])
-        dims[dim] = n
-        if D[key].dtype == 'float':
-          D[key] = np.append(D[key],np.zeros(dims)*np.NaN,dim)
-        else:
-          D[key] = np.append(D[key],np.zeros(dims).astype(D[key].dtype),dim)
-        if not (D2 is None):
-          D[key][-n:,...] = D2[key]
-  return D
-
-
-def clean_dict(D,idx,dim=0):
-  assert dim==0, 'Only works for dimension 0 for now'
-  print('cleaning dictionary of %d entries'%np.count_nonzero(~idx))
-  for key in D.keys():
-    if not (key=='session_shift'):
-      if type(D[key]) is dict:
-        clean_dict(D[key],idx,dim)
-      else:
-        D[key] = D[key][idx,...]
-
-
 def fdr_control(x,alpha):
 
   if alpha < 1:
