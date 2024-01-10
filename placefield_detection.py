@@ -27,10 +27,10 @@ from ultranest.plot import cornerplot
 import ultranest.stepsampler
 # implement instead !! https://dynesty.readthedocs.io/en/latest/overview.html
 
-from PC_detection.spike_shuffling import shuffling
+from utils.spike_shuffling import shuffling
 
-from PC_detection.utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
-from PC_detection.utils_data import set_para
+from .utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
+from .utils_data import set_para
 
 warnings.filterwarnings("ignore")
 
