@@ -2,18 +2,18 @@
 
   get_nFolder   get number of folders in path
   pathcat       attach strings to create proper paths
-  _hsm          half sampling mode to obtain baseline
+  calculate_hsm          half sampling mode to obtain baseline
 
 
 '''
 
-import os, pickle, cmath, time, cv2, h5py
+import os, pickle, cmath, cv2
 import scipy as sp
 import scipy.stats as sstats
 from scipy import signal, cluster
 import numpy as np
 import matplotlib.pyplot as plt
-from fastcluster import linkage
+# from fastcluster import linkage
 from scipy.spatial.distance import squareform
 
 
@@ -43,13 +43,13 @@ def find_modes(data,axis=None,sort_it=True):
     if sort_it:
       data = np.sort(data)
 
-    dataMode = _hsm(data)
+    dataMode = calculate_hsm(data)
 
   return dataMode
 
 
 
-def _hsm(data,sort_it=True):
+def calculate_hsm(data,sort_it=True):
   ### adapted from caiman
   ### Robust estimator of the mode of a data set using the half-sample mode.
   ### versionadded: 1.0.3
@@ -87,7 +87,7 @@ def _hsm(data,sort_it=True):
       if w < wMin:
         wMin = w
         j = i
-    return _hsm(data[j:j + N])
+    return calculate_hsm(data[j:j + N])
 
 
 def periodic_distr_distance(p1,p2,nbin,L_track,mu1=None,mu2=None,N_bs=1000,mode='wasserstein'):
@@ -280,40 +280,6 @@ def ecdf(x,p=None):
     y = np.cumsum(np.ones(x.shape)/x.shape)
 
   return x,y
-
-
-
-def extend_dict(D,n,D2=None,dim=0,exclude=[]):
-  if not bool(D):
-    return D2
-  for key in D.keys():
-    if not (key in exclude):
-      if type(D[key]) is dict:
-        if not (D2 is None):
-          extend_dict(D[key],n,D2[key],dim)
-        else:
-          extend_dict(D[key],n,None,dim)
-      else:
-        dims = np.array(D[key].shape[:])
-        dims[dim] = n
-        if D[key].dtype == 'float':
-          D[key] = np.append(D[key],np.zeros(dims)*np.NaN,dim)
-        else:
-          D[key] = np.append(D[key],np.zeros(dims).astype(D[key].dtype),dim)
-        if not (D2 is None):
-          D[key][-n:,...] = D2[key]
-  return D
-
-
-def clean_dict(D,idx,dim=0):
-  assert dim==0, 'Only works for dimension 0 for now'
-  print('cleaning dictionary of %d entries'%np.count_nonzero(~idx))
-  for key in D.keys():
-    if not (key=='session_shift'):
-      if type(D[key]) is dict:
-        clean_dict(D[key],idx,dim)
-      else:
-        D[key] = D[key][idx,...]
 
 
 def fdr_control(x,alpha):
@@ -732,7 +698,6 @@ def compute_serial_matrix(dist_mat,method="ward"):
     '''
     N = len(dist_mat)
     flat_dist_mat = np.maximum(0,squareform(dist_mat,checks=False))
-
     #res_linkage = linkage(flat_dist_mat, method=method,preserve_input=False)
     res_linkage = sp.cluster.hierarchy.linkage(flat_dist_mat,method=method,optimal_ordering=True)
     res_order = seriation(res_linkage, N, N + N-2)
@@ -769,7 +734,7 @@ def get_reliability(trial_map,map,field,t):
 
     ## obtain noise level + threshold
     sd_fmap = 2
-    nbin = 100
+    nbin = map.shape[0]
     base = np.nanmedian(map)
 
     if np.all(np.isnan(field[t,...])):
@@ -814,7 +779,7 @@ def get_reliability(trial_map,map,field,t):
 
         plt.plot(field[t,3,0],5,'rx')
 
-        plt.plot([0,100],[fmap_thr,fmap_thr],'r--')
+        plt.plot([0,nbin],[fmap_thr,fmap_thr],'r--')
         # print(field_rate)
         plt.subplot(212)
         plt.plot(field_rate)
@@ -829,32 +794,86 @@ def get_reliability(trial_map,map,field,t):
             plt.plot([field_bin_r,field_bin_r],[0,10],'k--')
             for i in [1,3]:
                 plt.plot(gauss_smooth(trial_map[tt,:],i))
-            plt.plot([0,100],[fmap_thr,fmap_thr],'r:')
+            plt.plot([0,nbin],[fmap_thr,fmap_thr],'r:')
             plt.ylim([0,20])
         plt.show(block=False)
 
     return rel, field_max, trial_field
 
-def get_firingrate(S,f=15,sd_r=1):
+def get_firingrate(S,f=15,sd_r=1,Ns_thr=10):
+    '''
+        calculates the firing rate from a an array of spike probabilities ('S' from CaImAn) 
+        by thresholding data according to multiples sd_r of estimated variance
 
-    S[S<0.0001*S.max()]=0
+        Ns_thr:
+          - minimum number of non-zero entries in S
+
+        
+        returns
+            - firing rate (in spikes/sec, depending on provided framerate f)
+            - calculated spiking threshold
+            - array with number of spikes per frame
+
+    '''
+
+    S[S<S.max()*10**(-4)]=0
     Ns = (S>0).sum()
-    if Ns==0:
-      return 0,np.NaN,np.zeros_like(S)
+    if Ns<Ns_thr:
+        return 0,np.NaN,np.zeros_like(S)
     else:
-      trace = S[S>0]
-      baseline = np.median(trace)
-      trace -= baseline
-      trace *= -1*(trace <= 0)
+        # estimate noise level by using median value (assuming most entries are not actual spikes)
+        # and obtain values below median to estimate variance from negative half-gaussian distribution
+        trace = S[S>0]
+        baseline = np.median(trace)
+        trace -= baseline
+        trace *= -1*(trace <= 0)
 
-      Ns_baseline = (trace>0).sum()
-      noise = np.sqrt((trace**2).sum()/(Ns_baseline*(1-2/np.pi)))
+        # calculate variance
+        Ns_baseline = (trace>0).sum()
+        noise = np.sqrt((trace**2).sum()/(Ns_baseline*(1-2/np.pi)))
 
-      sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
-      firing_threshold_adapt = baseline + sd_r*noise
+        # either use provided sd_r, or calculate multiples of variance to ensure 
+        # p-value of 10% (including correction for multiple comparisons)
+        sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
+        firing_threshold_adapt = baseline + sd_r*noise
 
-      N_spikes = np.floor(S / firing_threshold_adapt).sum()
-      return N_spikes/(S.shape[0]/f),firing_threshold_adapt,np.floor(S / firing_threshold_adapt)#S > firing_threshold_adapt#
+        # number of spikes in each bin is the value multiple above calculated threshold
+        N_spikes = np.floor(S / firing_threshold_adapt).sum()
+
+        return N_spikes/(S.shape[0]/f),firing_threshold_adapt,np.floor(S / firing_threshold_adapt)#S > firing_threshold_adapt#
+
+
+def get_firingmap(S,binpos,dwelltime=None,nbin=None):
+
+    if not nbin:
+        nbin = np.max(binpos)+1
+    
+    ### calculates the firing map
+    spike_times = np.where(S)
+    spikes = S[spike_times]
+    binpos = binpos[spike_times]#.astype('int')
+
+    firingmap = np.zeros(nbin)
+    for (p,s) in zip(binpos,spikes):#range(len(binpos)):
+        firingmap[p] = firingmap[p]+s
+
+    if not (dwelltime is None):
+        firingmap = firingmap/dwelltime
+        firingmap[dwelltime==0] = np.NaN
+
+    return firingmap
+
+
+def get_MI(p_joint,p_x,p_f):
+
+    ### - joint distribution
+    ### - behavior distribution
+    ### - firing rate distribution
+    ### - all normalized, such that sum(p) = 1
+
+    p_tot = p_joint * np.log2(p_joint/(p_x[:,np.newaxis]*p_f[np.newaxis,:]))
+    return np.nansum(p_tot)
+
 
 def add_number(fig,ax,order=1,offset=None):
 
@@ -937,3 +956,57 @@ def get_mean_SD(SDs):
     n = mask.sum()
     vars = SDs[mask]**2
     return np.sqrt(1/n**2 * np.sum(vars))
+
+
+def jackknife(X,Y,W=None,rank=1):
+
+  ## jackknifing a linear fit (with possible weights)
+  ## W_i = weights of value-tuples (X_i,Y_i)
+
+    if type(W) == np.ndarray:
+        print('weights given (not working)')
+        W = np.ones(Y.shape)
+        Xw = X * np.sqrt(W[:,np.newaxis])
+        Yw = Y * np.sqrt(W)
+    else:
+        if rank==1:
+            Xw = X
+        elif rank==2:
+            Xw = np.vstack([X,np.ones(len(X))]).T
+        Yw = Y
+
+    if len(Xw.shape) < 2:
+        Xw = Xw[:,np.newaxis]
+
+    N_data = len(Y);
+
+    fit_jk = np.zeros((N_data,2));
+    mask_all = (~np.isnan(Y)) & (~np.isnan(X))
+
+    for i in range(N_data):
+        mask = np.copy(mask_all)
+        mask[i] = False;
+        try:
+            if rank==1:
+                    fit_jk[i,0] = np.linalg.lstsq(Xw[mask,:],Yw[mask])[0]
+            elif rank==2:
+                    fit_jk[i,:] = np.linalg.lstsq(Xw[mask,:],Yw[mask])[0]
+            #fit_jk[i,1] = 0
+        except:
+            fit_jk[i,:] = np.NaN
+
+    return np.nanmean(fit_jk,0)
+
+
+
+### -------------- lognorm distribution ---------------------
+def lognorm_paras(mean,sd):
+    shape = np.sqrt(np.log(sd/mean**2+1))
+    mu = np.log(mean/np.sqrt(sd/mean**2 + 1))
+    return mu, shape
+
+### -------------- Gamma distribution -----------------------
+def gamma_paras(mean,SD):
+    alpha = (mean/SD)**2
+    beta = mean/SD**2
+    return alpha, beta

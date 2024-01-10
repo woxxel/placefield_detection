@@ -1,1 +1,1 @@
-from .placefield_detection import *
+from .detection import *
