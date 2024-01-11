@@ -1,22 +1,18 @@
 #!/bin/bash
 
 cpus=12
-# datapath='/usr/users/cidbn1/neurodyn'
-datapath=/scratch/users/$USER/data
+datapath='/usr/users/cidbn1/placefields'  # same in/out datapath, as it uses processed file (CNMF-result), already
 dataset="AlzheimerMice_Hayashi"
 # dataset="Shank2Mice_Hayashi"
 
 SUBMIT_FILE="./sbatch_submit.sh"
 
 mice=$(find $datapath/$dataset/* -maxdepth 0 -type d -exec basename {} \;)
-#mouse='555wt'
-# echo "Found mice in dataset $dataset: $mice"
-# read -p 'Which mouse should be processed? ' mouse
+echo "Found mice in dataset $dataset: $mice"
+read -p 'Which mouse should be processed? ' mouse
 
-for mouse in $mice
-do
-  # mkdir -p $HOME/data/$mouse
-#   mkdir -p /scratch/users/$USER/data/$dataset/$mouse
+# for mouse in $mice
+# do
 
   ## getting all sessions of $mouse to loop through
   session_names=$(find $datapath/$dataset/$mouse/Session* -maxdepth 0 -type d -exec basename {} \;)
@@ -24,15 +20,17 @@ do
   # s=1
   for session_name in $session_names
   do
-    if test -f /scratch/users/$USER/data/$dataset/$mouse/$session_name/PC_Fields.pkl; then
+
+    if ! $(test -d $datapath/$dataset/$mouse/$session_name); then
+      mkdir -p $datapath/$dataset/$mouse/$session_name; 
+    fi
+
+    if test -f $datapath/$dataset/$mouse/$session_name/PC_Fields.pkl; then
       # echo "$session_name already processed - skipping"
       continue
     fi
 
-    session_path=$datapath/$dataset/$mouse/$session_name
-
-    #if test -d $session_path/images; then
-    echo "Processing $session_path"
+    echo "Processing mouse $mouse, $session_name"
 
     ## writing sbatch submission commands to bash-file
     cat > $SUBMIT_FILE <<- EOF
@@ -41,7 +39,6 @@ do
 #SBATCH -p medium
 #SBATCH -c $cpus
 #SBATCH -t 01:00:00
-#SBATCH -C scratch
 #SBATCH --mem=8000
 
 module use /usr/users/cidbn_sw/sw/modules
@@ -53,18 +50,11 @@ export OPENBLAS_NUM_THREADS=1
 export VECLIB_MAXIMUM_THREADS=1
 export OMP_NUM_THREADS=1
 
-python3 ~/program_code/PC_detection/run_script.py $datapath $dataset $mouse $session_name $cpus
+python3 ./run_script.py $datapath $dataset $mouse $session_name $cpus
 EOF
 
     sbatch $SUBMIT_FILE
     rm $SUBMIT_FILE
-    # fi
-
-    # ## only process first 5 sessions (for now)
-    # if [[ $s -eq 5 ]]; then
-    #   break
-    # fi
-    # ((s++))
 
   done
-done
+# done

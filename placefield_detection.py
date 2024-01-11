@@ -29,7 +29,7 @@ import ultranest.stepsampler
 
 from utils import shuffling
 
-from utils import _hsm, get_average, ecdf, get_nPaths, extend_dict, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
+from utils import _hsm, get_average, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, add_number, pickleData
 from utils import set_para
 
 warnings.filterwarnings("ignore")
