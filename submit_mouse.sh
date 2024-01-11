@@ -1,13 +1,15 @@
 #!/bin/bash
 
-cpus=8
-datapath='/usr/users/cidbn1/placefields'
+cpus=12
+# datapath='/usr/users/cidbn1/neurodyn'
+datapath=/scratch/users/$USER/data
 dataset="AlzheimerMice_Hayashi"
 # dataset="Shank2Mice_Hayashi"
 
 SUBMIT_FILE="./sbatch_submit.sh"
 
 mice=$(find $datapath/$dataset/* -maxdepth 0 -type d -exec basename {} \;)
+#mouse='555wt'
 # echo "Found mice in dataset $dataset: $mice"
 # read -p 'Which mouse should be processed? ' mouse
 
@@ -22,10 +24,10 @@ do
   # s=1
   for session_name in $session_names
   do
-    # if test -f /scratch/users/$USER/data/$dataset/$mouse/$session_name/OnACID_results.hdf5; then
-    #   # echo "$session_name already processed - skipping"
-    #   continue
-    # fi
+    if test -f /scratch/users/$USER/data/$dataset/$mouse/$session_name/PC_Fields.pkl; then
+      # echo "$session_name already processed - skipping"
+      continue
+    fi
 
     session_path=$datapath/$dataset/$mouse/$session_name
 
@@ -39,6 +41,7 @@ do
 #SBATCH -p medium
 #SBATCH -c $cpus
 #SBATCH -t 01:00:00
+#SBATCH -C scratch
 #SBATCH --mem=8000
 
 module use /usr/users/cidbn_sw/sw/modules
@@ -50,7 +53,7 @@ export OPENBLAS_NUM_THREADS=1
 export VECLIB_MAXIMUM_THREADS=1
 export OMP_NUM_THREADS=1
 
-python3 ~/program_code/PC_detection/run_script.py $dataset $mouse $session_name $cpus
+python3 ~/program_code/PC_detection/run_script.py $datapath $dataset $mouse $session_name $cpus
 EOF
 
     sbatch $SUBMIT_FILE

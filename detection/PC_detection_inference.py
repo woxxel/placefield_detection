@@ -329,7 +329,7 @@ class PC_detection_inference:
             return get_MI(p_joint,dwelltime/dwelltime.sum(),self.para['qtl_weight'])
 
         elif mode == 'Isec':
-            fmap = get_firingmap(activity,self.behavior['binpos_coarse_active'],dwelltime,nbin=self.para['nbin_coarse'])
+            fmap = get_firingmap(activity,self.behavior['binpos_coarse'],dwelltime,nbin=self.para['nbin_coarse'])
             Isec_arr = dwelltime/dwelltime.sum()*(fmap/np.nanmean(fmap))*np.log2(fmap/np.nanmean(fmap))
 
             #return np.nansum(Isec_arr[-self.para['nbin']//2:])
@@ -344,7 +344,7 @@ class PC_detection_inference:
         p_joint = np.zeros((self.para['nbin_coarse'],self.para['qtl_steps']))
 
         for q in range(self.para['qtl_steps']):
-            for (x,ct) in Counter(self.behavior['binpos_coarse_active'][activity==q]).items():
+            for (x,ct) in Counter(self.behavior['binpos_coarse'][activity==q]).items():
                 p_joint[x,q] = ct;
         p_joint = p_joint/p_joint.sum();    ## normalize
         return p_joint
