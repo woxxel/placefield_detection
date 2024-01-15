@@ -39,7 +39,7 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=20,f=15.,T=None,
     
     time = loadData['time']
     position = loadData['position']
-    rw_pos = loadData['reward_location']
+    rw_pos = loadData['reward_location']*nbin
 
     ## get range of values
     min_val,max_val = np.nanpercentile(position,(0.1,99.9))
