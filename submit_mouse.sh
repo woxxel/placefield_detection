@@ -1,9 +1,9 @@
 #!/bin/bash
 
 cpus=12
-# datapath='/usr/users/cidbn1/neurodyn'
+datapath=/usr/users/cidbn1/neurodyn
 datapath=/scratch/users/$USER/data
-dataset="AlzheimerMice_Hayashi"
+dataset=AlzheimerMice_Hayashi
 # dataset="Shank2Mice_Hayashi"
 
 SUBMIT_FILE="./sbatch_submit.sh"
@@ -16,7 +16,7 @@ mice=$(find $datapath/$dataset/* -maxdepth 0 -type d -exec basename {} \;)
 for mouse in $mice
 do
   # mkdir -p $HOME/data/$mouse
-#   mkdir -p /scratch/users/$USER/data/$dataset/$mouse
+  # mkdir -p /scratch/users/$USER/data/$dataset/$mouse
 
   ## getting all sessions of $mouse to loop through
   session_names=$(find $datapath/$dataset/$mouse/Session* -maxdepth 0 -type d -exec basename {} \;)
