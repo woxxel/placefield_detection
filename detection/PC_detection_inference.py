@@ -15,7 +15,7 @@ from caiman.utils.utils import load_dict_from_hdf5
 # from dynesty import DynamicNestedSampler, pool as dypool, utils, plotting as dyplot
 
 import ultranest
-from ultranest.plot import cornerplot
+# from ultranest.plot import cornerplot
 import ultranest.stepsampler
 # implement instead !! https://dynesty.readthedocs.io/en/latest/overview.html
 

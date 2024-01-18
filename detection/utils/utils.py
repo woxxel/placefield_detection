@@ -7,13 +7,11 @@
 
 '''
 
-import os, pickle, cmath, cv2
+import os, cmath
 import scipy as sp
 import scipy.stats as sstats
-from scipy import signal, cluster
 import numpy as np
 import matplotlib.pyplot as plt
-# from fastcluster import linkage
 from scipy.spatial.distance import squareform
 
 
@@ -23,14 +21,10 @@ def get_nPaths(path,pathStr):
   nF = 0
   for file in os.listdir(path):
     if file.startswith(pathStr):
-      paths.append(pathcat([path,file]))
+      paths.append(os.path.join(path,file))
       nF+=1
 
   return nF, paths
-
-
-def pathcat(strings):
-  return '/'.join(strings)
 
 
 def find_modes(data,axis=None,sort_it=True):
@@ -90,122 +84,6 @@ def calculate_hsm(data,sort_it=True):
     return calculate_hsm(data[j:j + N])
 
 
-def periodic_distr_distance(p1,p2,nbin,L_track,mu1=None,mu2=None,N_bs=1000,mode='wasserstein'):
-
-  if mode=='wasserstein':
-    ### test, whether any distribution is cut off by "periodic bounds"
-    d_raw = mu2-mu1
-    shift_sign = 1 if (d_raw>=0) & (abs(d_raw)<(L_track/2)) else -1
-    if abs(d_raw) > L_track/2:
-      shift = int((mu1+mu2)/2)
-      d_out = periodic_wasserstein_distance(np.roll(p1,shift),np.roll(p2,shift),(mu1+shift)%L_track,(mu2+shift)%L_track,L_track)
-    else:
-
-      idx_p1 = p1>p1.max()*10**(-2)
-      idx_p2 = p2>p2.max()*10**(-2)
-      x = np.arange(nbin)
-      if (idx_p1[0] & idx_p1[-1]) | (idx_p2[0] & idx_p2[-1]) | (abs(d_raw)>L_track/3):
-        d = np.zeros(nbin)
-        for shift in np.linspace(0,L_track,nbin):
-          #d[shift] = sstats.wasserstein_distance(x,x,np.roll(p1,shift),np.roll(p2,shift))
-          d[shift] = wasserstein_distance(x,x,np.roll(p1,shift),np.roll(p2,shift))
-        d_out = d.min()
-
-      else:
-        #print('calc direct')
-        #d_out = sstats.wasserstein_distance(x,x,p1,p2)
-        d_out = wasserstein_distance(x,x,p1,p2)
-      d_out *= shift_sign
-      #print('wasserstein: %5.3f: '%d_out)
-      #print('raw: %5.3f'%d_raw)
-    return d_out
-  else:
-    ## get distance via bootstrapping
-
-    cdf1 = np.cumsum(p1)
-    cdf2 = np.cumsum(p2)
-
-    rnd1 = np.random.rand(N_bs,1)
-    rnd2 = np.random.rand(N_bs,1)
-    x1 = np.argmin(abs(rnd1-cdf1[np.newaxis,:]),1)
-    x2 = np.argmin(abs(rnd2-cdf2[np.newaxis,:]),1)
-
-    ## correct for very low probabilities, where very first entry is taken - should rather be entry, closest to distribution (>0, but <distr)
-    for i in np.where(x1==0)[0]:
-        tmp = abs(rnd1[i]-cdf1)
-        x1[i] = np.where(tmp==tmp.min())[0][-1]
-    for i in np.where(x2==0)[0]:
-        tmp = abs(rnd2[i]-cdf2)
-        x2[i] = np.where(tmp==tmp.min())[0][-1]
-
-    shift_distr = np.zeros(N_bs)
-
-    ## generate two samples from distribution from cdfs
-    shift_distr = (x2-x1 + L_track/2)%L_track -L_track/2
-    d_out = get_average(shift_distr,1,periodic=True,bounds=[-L_track/2,L_track/2])
-    p_out = np.histogram(shift_distr,np.linspace(-L_track/2,L_track/2,nbin+1),density=True)[0]
-    p_out[p_out<10**(-10)] = 0
-    #CI = np.percentile(shift_distr,[5,95])
-    #print('CI: %5.3f,%5.3f'%(CI[0],CI[1]))
-
-    # plt.figure()
-    # plt.subplot(211)
-    # plt.plot(p1)
-    # plt.plot(p2,'r')
-    # plt.subplot(212)
-    # plt.hist(shift_distr,np.linspace(-50,50,101),density=True)
-    # plt.plot(np.linspace(-49.5,49.5,100),p_out)
-    # plt.plot(d_out,0,'rx')
-    # #d_raw = abs((d_raw+nbin/2)%nbin-nbin/2) * shift_sign
-    # #plt.plot(d_raw,0,'kx')
-    # plt.xlim([-50,50])
-    # plt.show(block=False)
-    return d_out, p_out
-
-
-
-  #### test, whether extrema of distributions are < nbin/2 apart
-  #plt.figure()
-  ##plt.subplot(211)
-  #plt.plot(p1)
-  #plt.plot(p2,'r')
-  ##plt.subplot(212)
-  ##plt.plot(d)
-  ##plt.plot(d_raw,d_raw,'rx');
-  #plt.show(block=False)
-
-  return d_out
-
-
-def periodic_to_complex(x,bounds):
-  scale = (bounds[1]-bounds[0])/(2*np.pi)
-  return np.exp(complex(0,1)*(x-bounds[0])/scale)
-
-def complex_to_periodic(phi,bounds):
-  L = bounds[1]-bounds[0]
-  scale = L/(2*np.pi)
-
-  return (cmath.phase(phi)*scale) % L + bounds[0]
-
-
-def wasserstein_distance(u_values, v_values, u_weights=None, v_weights=None):
-
-    deltas = np.ones(u_values.shape)
-
-    # Calculate the CDFs of u and v using their weights, if specified.
-    if u_weights is None:
-        u_cdf = u_cdf_indices / u_values.size
-    else:
-        u_cdf = np.cumsum(u_weights)
-
-    if v_weights is None:
-        v_cdf = v_cdf_indices / v_values.size
-    else:
-        v_cdf = np.cumsum(v_weights)
-
-    return np.sum(np.multiply(np.abs(u_cdf - v_cdf), deltas))
-
-
 def bootstrap_data(fun,data,N_bs):
   ## data:    data to be bootstrapped over
   ## fun:     function to be applied to data "f(data)". needs to return calculated parameters in first return statement
@@ -231,39 +109,6 @@ def bootstrap_data(fun,data,N_bs):
 
   return par.mean(0), par.std(0)
 
-def pickleData(dat,path,mode='load',prnt=True):
-
-  if mode=='save':
-    f = open(path,'wb')
-    pickle.dump(dat,f)
-    f.close()
-    if prnt:
-        print('Data saved in %s'%path)
-  else:
-    f = open(path,'rb')
-    dat = pickle.load(f)
-    f.close()
-    if prnt:
-        print('Data loaded from %s'%path)
-    return dat
-
-
-def get_average(x,p,periodic=False,bounds=None):
-
-  #assert abs(1-p.sum()) < 10**(-2), 'probability not normalized, sum(p) = %5.3g'%p.sum()
-  if not np.isscalar(p) | (abs(1-np.sum(p)) < 10**(-2)):
-      p /= p.sum()
-  if periodic:
-    assert bounds, 'bounds not specified'
-    L = bounds[1]-bounds[0]
-    scale = L/(2*np.pi)
-    avg = (cmath.phase((p*np.exp(+complex(0,1)*(x-bounds[0])/scale)).sum())*scale) % L + bounds[0]
-    # avg = (cmath.phase((p*np.exp(+complex(0,1)*(x-bounds[0])/scale)).sum())*scale + bounds[0]) % L
-    # avg = (cmath.phase((p*periodic_to_complex(x,bounds)).sum())*scale) % L + bounds[0]
-  else:
-    avg = (x*p).sum()
-  return avg
-
 
 
 def ecdf(x,p=None):
@@ -284,7 +129,7 @@ def ecdf(x,p=None):
 
 def fdr_control(x,alpha):
 
-  if alpha < 1:
+  if alpha < 1: 
     x[x==0.001] = 10**(-10)
     x_mask = ~np.isnan(x)
     N = x_mask.sum()
@@ -302,65 +147,6 @@ def fdr_control(x,alpha):
   else:
     classified = np.ones(len(x)).astype('bool')
   return classified
-
-def fit_plane(data,anchor=None):
-  ## Constructs a plane from a collection of points
-  ## so that the summed squared distance to all points is minimzized
-  ### obtained from https://www.ilikebigbits.com/2015_03_04_plane_from_points.html
-
-  assert len(data.shape) == 2, 'Please provide data as 2D-array'
-  assert data.shape[-1] == 3, 'Please provide the values of x,y and z-direction for each data point'
-  assert data.shape[0]>2, 'More points are required to fit'
-
-  ## calculate centroid of data as anchor point for plane
-  if anchor is None:
-    p = data.mean(0)
-  else:
-    p = np.array(anchor)
-
-  Cov = np.cov(data-p,rowvar=False)
-
-  det = np.zeros(3)
-  det[0] = Cov[1,1]*Cov[2,2] - Cov[1,2]*Cov[2,1]
-  det[1] = Cov[0,0]*Cov[2,2] - Cov[0,2]*Cov[2,0]
-  det[2] = Cov[0,0]*Cov[1,1] - Cov[0,1]*Cov[1,0]
-  det_max = np.max(det)
-
-  n = np.zeros(3)   ## normal vector
-  if det_max == det[0]:
-    n[0] = det[0]
-    n[1] = Cov[0,2]*Cov[1,2] - Cov[0,1]*Cov[2,2]
-    n[2] = Cov[0,1]*Cov[1,2] - Cov[0,2]*Cov[1,1]
-  elif det_max == det[1]:
-    n[0] = Cov[0,2]*Cov[1,2] - Cov[0,1]*Cov[2,2]
-    n[1] = det[1]
-    n[2] = Cov[0,1]*Cov[0,2] - Cov[1,2]*Cov[0,0]
-  else:
-    n[0] = Cov[0,1]*Cov[1,2] - Cov[0,2]*Cov[1,1]
-    n[1] = Cov[0,1]*Cov[0,2] - Cov[1,2]*Cov[0,0]
-    n[2] = det[2]
-  n /= np.linalg.norm(n)  ## normalize!
-  return (p,n), np.NaN
-
-
-def z_from_point_normal_plane(x,y,p,n):
-  ## p: some point on plane
-  ## n: normal vector of plane
-  return - n[0]/n[2]*(x-p[0]) - n[1]/n[2]*(y-p[1]) + p[2]
-
-
-def rotation_matrix(u,theta,degree=True):
-
-  d = 3
-  R = np.zeros((d,d))
-  I = np.eye(d)
-
-  if degree:
-    theta *= 2*np.pi/360
-
-  u /= np.array(u).sum()
-
-  return np.cos(theta) * I + np.sin(theta) * np.cross(I,u) + (1 - np.cos(theta)) * np.outer(u,u)
 
 
 def KS_test(dat1,dat2):
@@ -393,9 +179,6 @@ def KS_test(dat1,dat2):
   plt.show(block=False)
 
   ## add 0 entries at other data points
-
-
-
   return np.abs(d1-d2).max()
 
 
@@ -411,216 +194,6 @@ def occupation_measure(data,x_ext,y_ext,nA=[10,10]):
 
   return 1-np.sqrt(np.sum((rA-1)**2))/(nA[0]*nA[1])
 
-
-
-
-def E_stat_test(dat1,dat2):
-
-  n = dat1.shape[0]
-  m = dat2.shape[0]
-
-  A = 1/(n*m)*sp.spatial.distance.cdist(dat1,dat2).sum()
-  B = 1/n**2*sp.spatial.distance.cdist(dat1,dat1).sum()
-  C = 1/m**2*sp.spatial.distance.cdist(dat2,dat2).sum()
-
-  print(A)
-  print(B)
-  print(C)
-  E = 2*A - B - C
-
-  T = n*m/(n+m)*E
-  print('test stat: %5.3g'%T)
-
-
-
-def com(A, d1, d2, d3=None):
-
-  if 'csc_matrix' not in str(type(A)):
-      A = sp.sparse.csc_matrix(A)
-
-  if d3 is None:
-      Coor = np.matrix([np.outer(np.ones(d2), np.arange(d1)).ravel(),
-                        np.outer(np.arange(d2), np.ones(d1)).ravel()], dtype=A.dtype)
-  else:
-      Coor = np.matrix([
-          np.outer(np.ones(d3), np.outer(np.ones(d2), np.arange(d1)).ravel()).ravel(),
-          np.outer(np.ones(d3), np.outer(np.arange(d2), np.ones(d1)).ravel()).ravel(),
-          np.outer(np.arange(d3), np.outer(np.ones(d2), np.ones(d1)).ravel()).ravel()],
-          dtype=A.dtype)
-
-  Anorm = sp.sparse.vstack([a.multiply(a>0.001*a.max())/a[a>0.001*a.max()].sum() if (a>0).sum()>0 else sp.sparse.csc_matrix(a.shape) for a in A.T]).T;
-  cm = (Coor * Anorm).T
-  cm[np.squeeze(np.array((Anorm>0).sum(0)))==0,:] = np.NaN
-  return np.array(cm)
-
-
-def calculate_img_correlation(A1,A2,dims=(512,512),crop=False,cm_crop=None,binary=False,shift=True,plot_bool=False):
-
-  if shift:
-
-    ## try with binary and continuous
-    if binary == 'half':
-      A1 = (A1>np.median(A1.data)).multiply(A1)
-      A2 = (A2>np.median(A2.data)).multiply(A2)
-    elif binary:
-      A1 = A1>np.median(A1.data)
-      A2 = A2>np.median(A2.data)
-
-    #t_start = time.time()
-    if not np.all(A1.shape == dims):
-      A1 = A1.reshape(dims)
-    if not np.all(A2.shape == dims):
-      A2 = A2.reshape(dims)
-    #t_end = time.time()
-    #print('reshaping --- time taken: %5.3g'%(t_end-t_start))
-
-    if crop:
-      #t_start = time.time()
-      row,col,tmp = sp.sparse.find(A1)
-      A1 = A1.toarray()[row.min():row.max()+1,col.min():col.max()+1]
-      row,col,tmp = sp.sparse.find(A2)
-      A2 = A2.toarray()[row.min():row.max()+1,col.min():col.max()+1]
-      #t_end = time.time()
-      #print('cropping 1 --- time taken: %5.3g'%(t_end-t_start))
-
-      #t_start = time.time()
-      padding = np.subtract(A2.shape,A1.shape)
-      if padding[0] > 0:
-        A1 = np.pad(A1,[[padding[0],0],[0,0]],mode='constant',constant_values=0)
-      else:
-        A2 = np.pad(A2,[[-padding[0],0],[0,0]],mode='constant',constant_values=0)
-
-      if padding[1] > 0:
-        A1 = np.pad(A1,[[0,0],[padding[1],0]],mode='constant',constant_values=0)
-      else:
-        A2 = np.pad(A2,[[0,0],[-padding[1],0]],mode='constant',constant_values=0)
-      #t_end = time.time()
-      #print('cropping 2 --- time taken: %5.3g'%(t_end-t_start))
-    else:
-      if not (type(A1) is np.ndarray):
-        A1 = np.array(A1)
-        A2 = np.array(A2)
-
-    dims = A1.shape
-
-    #t_start = time.time()
-    C = signal.convolve(A1-A1.mean(),A2[::-1,::-1]-A2.mean(),mode='same')/(np.prod(dims)*A1.std()*A2.std())
-    #t_end = time.time()
-    #print('corr-computation --- time taken: %5.3g'%(t_end-t_start))
-    C_max = C.max()
-    if np.isnan(C_max) | (C_max == 0):
-      return np.NaN, np.ones(2)*np.NaN
-
-    #if not crop:
-    crop_half = ((dims[0]-np.mod(dims[0],2))/2,(dims[1]-np.mod(dims[1],2))/2)#tuple(int(d/2-1) for d in dims)
-    idx_max = np.unravel_index(np.argmax(C),C.shape)
-    img_shift = np.subtract(idx_max,crop_half)
-
-    if (plot_bool):# | ((C_max>0.95)&(C_max<0.9999)):
-      #idx_max = np.where(C.real==C_max)
-      plt.figure()
-      ax1 = plt.subplot(221)
-      im = ax1.imshow(A1,origin='lower')
-      plt.colorbar(im)
-      plt.subplot(222,sharex=ax1,sharey=ax1)
-      plt.imshow(A2,origin='lower')
-      plt.colorbar()
-      plt.subplot(223)
-      plt.imshow(C,origin='lower')
-      plt.plot(crop_half[1],crop_half[0],'ro')
-      plt.colorbar()
-      plt.suptitle('corr: %5.3g'%C_max)
-      plt.show(block=True)
-
-    return C_max, img_shift # C[crop_half],
-  else:
-    #if not (type(A1) is np.ndarray):
-      #A1 = A1.toarray()
-    #if not (type(A2) is np.ndarray):
-      #A2 = A2.toarray()
-
-    if not (cm_crop is None):
-
-      cr = 20
-      extent = np.array([cm_crop-cr,cm_crop+cr+1]).astype('int')
-      extent = np.maximum(extent,0)
-      extent = np.minimum(extent,dims)
-      A1 = A1.reshape(dims)[extent[0,0]:extent[1,0],extent[0,1]:extent[1,1]]
-      A2 = A2.reshape(dims)[extent[0,0]:extent[1,0],extent[0,1]:extent[1,1]]
-    #else:
-      #extent = [[0,0],[dims[0],dims[1]]]
-    if plot_bool:
-      #idx_max = np.where(C.real==C_max)
-      plt.figure()
-      plt.subplot(221)
-      plt.imshow(A1.reshape(extent[1,0]-extent[0,0],extent[1,1]-extent[0,1]),origin='lower')
-      plt.colorbar()
-      plt.subplot(222)
-      plt.imshow(A2.reshape(extent[1,0]-extent[0,0],extent[1,1]-extent[0,1]),origin='lower')
-      plt.colorbar()
-      #plt.subplot(223)
-      #plt.imshow(C,origin='lower')
-      #plt.plot(crop_half[1],crop_half[0],'ro')
-      #plt.colorbar()
-      plt.suptitle('corr: %5.3g'%np.corrcoef(A1.flat,A2.flat)[0,1])
-      plt.show(block=False)
-    return A1.multiply(A2).sum()/np.sqrt(A1.power(2).sum()*A2.power(2).sum()), None
-    #return (A1*A2).sum()/np.sqrt((A1**2).sum()*(A2**2).sum()), None
-    #return np.corrcoef(A1.flat,A2.flat)[0,1], None
-
-
-def get_shift_and_flow(A1,A2,dims=(512,512),projection=-1,transpose_it=False,plot_bool=False):
-
-  ## dims:          shape of the (projected) image
-  ## projection:    axis, along which to project. If None, no projection needed
-
-  if not (projection is None):
-    A1 = np.array(A1.sum(projection))
-    A2 = np.array(A2.sum(projection))
-  A1 = A1.reshape(dims)
-  A2 = A2.reshape(dims)
-
-  if transpose_it:
-      A2 = A2.T
-
-  A1 = normalize_array(A1,'uint',8)
-  A2 = normalize_array(A2,'uint',8)
-
-  c,(y_shift,x_shift) = calculate_img_correlation(A1,A2,plot_bool=plot_bool)
-
-  x_grid, y_grid = np.meshgrid(np.arange(0., dims[0]).astype(np.float32), np.arange(0., dims[1]).astype(np.float32))
-  x_remap = (x_grid - x_shift).astype(np.float32)
-  y_remap = (y_grid - y_shift).astype(np.float32)
-
-  A2 = cv2.remap(A2, x_remap, y_remap, interpolation=cv2.INTER_CUBIC)
-  A2 = normalize_array(A2,'uint',8)
-
-  flow = cv2.calcOpticalFlowFarneback(A1,A2,None,0.5,5,128,3,7,1.5,0)
-
-  if plot_bool:
-
-    print('shift:',[x_shift,y_shift])
-    idxes = 15
-    plt.figure()
-    plt.quiver(x_grid[::idxes,::idxes], y_grid[::idxes,::idxes], flow[::idxes,::idxes,0], flow[::idxes,::idxes,1], angles='xy', scale_units='xy', scale=1, headwidth=4,headlength=4, width=0.002, units='width')
-    plt.show(block=False)
-
-  return (x_shift,y_shift), flow, (x_grid,y_grid), c
-
-
-def normalize_array(A,a_type='uint',a_bits=8,axis=None):
-  A -= A.min()
-  A = A/A.max()
-
-  return (A*(A>A.mean(axis))*(2**a_bits-1)).astype('%s%d'%(a_type,a_bits))
-
-def normalize_sparse_array(A):
-  #A = sp.sparse.vstack([a-a.min() for a in A.T]).T
-  return sp.sparse.vstack([a/a.max() for a in A.T]).T
-
-#def display_projected_movie(basePath,mouse,s):
-
-  #f1 = h5py.File(file_name,'r+')
 
 def fun_wrapper(fun,x,p):
   if np.isscalar(p):
@@ -638,45 +211,6 @@ def fun_wrapper(fun,x,p):
   if p.shape[-1] == 7:
     return fun(x,p[...,0],p[...,1],p[...,2],p[...,3],p[...,4],p[...,5],p[...,6])
 
-
-def gmean(X,axis=1,nanflag=False):
-
-  if nanflag:
-    return np.exp(np.nansum(np.log(X),axis)/(~np.isnan(X)).sum(axis))
-  else:
-    return np.exp(np.sum(np.log(X),axis)/X.shape[axis])
-
-def corr0(X,Y=None):
-
-  Y = X if Y is None else Y
-
-  X -= np.nanpercentile(X,20)
-  Y -= np.nanpercentile(X,20)
-
-  c_xy = np.zeros((len(X),len(X)))
-  for i,x in enumerate(X):
-    for j,y in enumerate(Y):
-      c_xy[i,j] = (x*y).sum()/np.sqrt((x**2).sum()*(y**2).sum())
-
-  return c_xy
-
-def seriation(Z,N,cur_index):
-    '''
-        input:
-            - Z is a hierarchical tree (dendrogram)
-            - N is the number of points given to the clustering process
-            - cur_index is the position in the tree for the recursive traversal
-        output:
-            - order implied by the hierarchical tree Z
-
-        seriation computes the order implied by a hierarchical tree (dendrogram)
-    '''
-    if cur_index < N:
-        return [cur_index]
-    else:
-        left = int(Z[cur_index-N,0])
-        right = int(Z[cur_index-N,1])
-        return (seriation(Z,N,left) + seriation(Z,N,right))
 
 def compute_serial_matrix(dist_mat,method="ward"):
     '''
@@ -698,6 +232,7 @@ def compute_serial_matrix(dist_mat,method="ward"):
     '''
     N = len(dist_mat)
     flat_dist_mat = np.maximum(0,squareform(dist_mat,checks=False))
+
     #res_linkage = linkage(flat_dist_mat, method=method,preserve_input=False)
     res_linkage = sp.cluster.hierarchy.linkage(flat_dist_mat,method=method,optimal_ordering=True)
     res_order = seriation(res_linkage, N, N + N-2)
@@ -707,6 +242,26 @@ def compute_serial_matrix(dist_mat,method="ward"):
     seriated_dist[b,a] = seriated_dist[a,b]
 
     return seriated_dist, res_order, res_linkage
+
+
+def seriation(Z,N,cur_index):
+    '''
+        input:
+            - Z is a hierarchical tree (dendrogram)
+            - N is the number of points given to the clustering process
+            - cur_index is the position in the tree for the recursive traversal
+        output:
+            - order implied by the hierarchical tree Z
+
+        seriation computes the order implied by a hierarchical tree (dendrogram)
+    '''
+    if cur_index < N:
+        return [cur_index]
+    else:
+        left = int(Z[cur_index-N,0])
+        right = int(Z[cur_index-N,1])
+        return (seriation(Z,N,left) + seriation(Z,N,right))
+
 
 def gauss_smooth(X,smooth=None,mode='wrap'):
   if (smooth is None) or not np.any(np.array(smooth)>0):
@@ -875,14 +430,16 @@ def get_MI(p_joint,p_x,p_f):
     return np.nansum(p_tot)
 
 
-def add_number(fig,ax,order=1,offset=None):
+def get_recurr(status,status_dep):
 
-    # offset = [-175,50] if offset is None else offset
-    offset = [-75,25] if offset is None else offset
-    pos = fig.transFigure.transform(plt.get(ax,'position'))
-    x = pos[0,0]+offset[0]
-    y = pos[1,1]+offset[1]
-    ax.text(x=x,y=y,s='%s)'%chr(96+order),ha='center',va='center',transform=None,weight='bold',fontsize=14)
+    nC,nSes = status.shape
+    recurr = np.zeros((nSes,nSes))*np.NaN
+    for s in range(nSes):#np.where(cluster.sessions['bool'])[0]:
+        overlap = status[status[:,s],:].sum(0).astype('float')
+        N_ref = status_dep[status[:,s],:].sum(0)
+        recurr[s,1:nSes-s] = (overlap/N_ref)[s+1:]
+
+    return recurr
 
 
 def get_status_arr(cluster,SD=1):
@@ -927,6 +484,7 @@ def get_status_arr(cluster,SD=1):
 
 
 def get_CI(p,X,Y,alpha=0.05):
+    ## what's that for?
     n,k = X.shape
 
     sigma2 = np.sum((Y-np.dot(X,p))**2) / (n-k)
@@ -938,24 +496,6 @@ def get_CI(p,X,Y,alpha=0.05):
     return CI
 
 
-def get_recurr(status,status_dep):
-
-    nC,nSes = status.shape
-    recurr = np.zeros((nSes,nSes))*np.NaN
-    for s in range(nSes):#np.where(cluster.sessions['bool'])[0]:
-        overlap = status[status[:,s],:].sum(0).astype('float')
-        N_ref = status_dep[status[:,s],:].sum(0)
-        recurr[s,1:nSes-s] = (overlap/N_ref)[s+1:]
-
-    return recurr
-
-
-def get_mean_SD(SDs):
-
-    mask = np.isfinite(SDs)
-    n = mask.sum()
-    vars = SDs[mask]**2
-    return np.sqrt(1/n**2 * np.sum(vars))
 
 
 def jackknife(X,Y,W=None,rank=1):
@@ -999,6 +539,7 @@ def jackknife(X,Y,W=None,rank=1):
 
 
 
+
 ### -------------- lognorm distribution ---------------------
 def lognorm_paras(mean,sd):
     shape = np.sqrt(np.log(sd/mean**2+1))
@@ -1010,3 +551,55 @@ def gamma_paras(mean,SD):
     alpha = (mean/SD)**2
     beta = mean/SD**2
     return alpha, beta
+
+
+def get_mean_SD(SDs):
+    ## isn't that just np.nanstd()?
+    mask = np.isfinite(SDs)
+    n = mask.sum()
+    vars = SDs[mask]**2
+    return np.sqrt(1/n**2 * np.sum(vars))
+
+
+def get_average(x,p,periodic=False,bounds=None):
+
+  #assert abs(1-p.sum()) < 10**(-2), 'probability not normalized, sum(p) = %5.3g'%p.sum()
+  if not np.isscalar(p) | (abs(1-np.sum(p)) < 10**(-2)):
+      p /= p.sum()
+  if periodic:
+    assert bounds, 'bounds not specified'
+    L = bounds[1]-bounds[0]
+    scale = L/(2*np.pi)
+    avg = (cmath.phase((p*np.exp(+complex(0,1)*(x-bounds[0])/scale)).sum())*scale) % L + bounds[0]
+    # avg = (cmath.phase((p*np.exp(+complex(0,1)*(x-bounds[0])/scale)).sum())*scale + bounds[0]) % L
+    # avg = (cmath.phase((p*periodic_to_complex(x,bounds)).sum())*scale) % L + bounds[0]
+  else:
+    avg = (x*p).sum()
+  return avg
+
+
+def corr0(X,Y=None):
+
+  Y = X if Y is None else Y
+
+  X -= np.nanpercentile(X,20)
+  Y -= np.nanpercentile(X,20)
+
+  c_xy = np.zeros((len(X),len(X)))
+  for i,x in enumerate(X):
+    for j,y in enumerate(Y):
+      c_xy[i,j] = (x*y).sum()/np.sqrt((x**2).sum()*(y**2).sum())
+
+  return c_xy
+
+
+## ------------------ PLOTTING ------------------- ##
+def add_number(fig,ax,order=1,offset=None):
+
+    # offset = [-175,50] if offset is None else offset
+    offset = [-75,25] if offset is None else offset
+    pos = fig.transFigure.transform(plt.get(ax,'position'))
+    x = pos[0,0]+offset[0]
+    y = pos[1,1]+offset[1]
+    ax.text(x=x,y=y,s='%s)'%chr(96+order),ha='center',va='center',transform=None,weight='bold',fontsize=14)
+

@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 
 from .utils import gauss_smooth
 
-def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=20,f=15.,T=None,
-                               speed_gauss_sd=4):
+def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=None,f=15.,T=None,
+                               speed_gauss_sd=4,calculate_performance=False):
     '''
         loads behavior from specified path
         Requires file to contain a dictionary with values for each frame, aligned to imaging data:
@@ -41,11 +41,7 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=20,f=15.,T=None,
     position = loadData['position']
     rw_pos = loadData['reward_location']*nbin
 
-    ## get range of values
-    min_val,max_val = np.nanpercentile(position,(0.1,99.9))
-    environment_length = max_val - min_val
-
-    binpos = np.minimum((position - min_val) / environment_length * nbin,nbin-1).astype('int')
+    binpos,environment_length = calculate_binpos(position,nbin)
 
     velocity = gauss_filter(np.maximum(0,np.diff(position,prepend=position[0])),speed_gauss_sd)* nbin/environment_length * f
 
@@ -58,16 +54,18 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=20,f=15.,T=None,
     data['time'] = time[data['active']]
     data['velocity'] = velocity[data['active']]
     
-    data['binpos_coarse'] = np.minimum((position[data['active']] - min_val) / environment_length * nbin_coarse,nbin_coarse-1).astype('int')
-    
-
     data['dwelltime'] = get_dwelltime(data['binpos'],nbin,f)
-    data['dwelltime_coarse'] = get_dwelltime(data['binpos_coarse'],nbin_coarse,f)
     
-    try:
-        data['performance'] = get_performance(binpos,velocity,time,rw_pos,0,nbin,f)
-    except:
-        pass
+    if nbin_coarse:
+        data['binpos_coarse'],_ = calculate_binpos(position,nbin_coarse)
+        data['dwelltime_coarse'] = get_dwelltime(data['binpos_coarse'],nbin_coarse,f) 
+
+    
+    if calculate_performance:
+        try:
+            data['performance'] = get_performance(binpos,velocity,time,rw_pos,0,nbin,f)
+        except:
+            pass
 
     # if plot_bool:
     #     plt.figure(dpi=300)
@@ -300,3 +298,13 @@ def get_dwelltime(position,nbin,f):
         )[0]/f
     
     return dwelltime
+
+
+def calculate_binpos(position,nbin):
+
+    ## get range of values
+    min_val,max_val = np.nanpercentile(position,(0.1,99.9))
+    environment_length = max_val - min_val
+
+    binpos = np.minimum((position - min_val) / environment_length * nbin,nbin-1).astype('int')
+    return binpos, environment_length

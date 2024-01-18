@@ -8,7 +8,7 @@ import numpy as np
 
 import logging
 
-from .utils import calculate_hsm, get_reliability, get_firingrate, pickleData
+from .utils import calculate_hsm, get_reliability, get_firingrate
 from .utils import detection_parameters, build_struct_PC_results
 from .utils import prepare_behavior
 
@@ -161,14 +161,10 @@ class PC_detection:
             return results
         else:
             print('saving results...')
-            pickleData(results,self.para[f'pathResults'],mode='save')
+            with open(self.para['pathResults'],'wb') as f_open:
+                pickle.dump(results,f_open)
             
-            # for key in ['status','fields','firingstats']:
-            #     pickleData(results[key],self.para[f'pathResults_{key}'],mode='save')
-
             return
-        # else:
-        #     print('nothing here to process')
 
 
     def load_neuron_data(self):        
