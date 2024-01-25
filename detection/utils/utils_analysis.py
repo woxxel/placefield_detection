@@ -31,7 +31,7 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=None,f=15.,T=None,
 
     if T is None:
         T = loadData['time'].shape[0]
-    20
+    
     ## first, handing over some general data
     # data = {}
     # for key in ['active','time','velocity']:
