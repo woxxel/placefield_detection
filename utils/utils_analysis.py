@@ -308,3 +308,28 @@ def calculate_binpos(position,nbin):
 
     binpos = np.minimum((position - min_val) / environment_length * nbin,nbin-1).astype('int')
     return binpos, environment_length
+
+
+
+def get_spikeNr(data):
+
+    if np.count_nonzero(data)==0:
+        return 0,np.NaN,np.NaN
+    else:
+        md = calculate_hsm(data,True);       #  Find the mode
+
+        # only consider values under the mode to determine the noise standard deviation
+        ff1 = data - md;
+        ff1 = -ff1 * (ff1 < 0);
+
+        # compute 25 percentile
+        ff1.sort()
+        ff1[ff1==0] = np.NaN
+        Ns = round((ff1>0).sum() * .5).astype('int')
+
+        # approximate standard deviation as iqr/1.349
+        iqr_h = ff1[-Ns];
+        sd_r = 2 * iqr_h / 1.349;
+        data_thr = md+2*sd_r;
+        spikeNr = np.floor(data/data_thr).sum();
+        return spikeNr,md,sd_r

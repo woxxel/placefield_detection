@@ -19,13 +19,11 @@ import ultranest
 import ultranest.stepsampler
 # implement instead !! https://dynesty.readthedocs.io/en/latest/overview.html
 
-from .utils.utils_data import build_struct_PC_results
-from .utils.utils import get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number
+from .utils import build_struct_PC_results, get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number, shuffling
 
-from .utils.spike_shuffling import shuffling
 from .HierarchicalBayesInference import *
 
-class PC_detection_inference:
+class placefield_detection_inference:
 
     def __init__(self,behavior,para):
         '''

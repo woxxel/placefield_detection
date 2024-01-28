@@ -15,7 +15,7 @@ class detection_parameters:
         coarse_factor = int(nbin/20)
         qtl_steps = 4
 
-        fact = 1 ## factor from path length to bin number
+        # fact = 1 ## factor from path length to bin number
 
         self.params = self.params | {
             'nbin':nbin,'f':15,
