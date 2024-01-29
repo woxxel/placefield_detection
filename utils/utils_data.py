@@ -68,13 +68,13 @@ class detection_parameters:
             'pathData': pathData,
 
             'pathResults': pathResults,
-            'pathFigures': os.path.join(pathResults,'figures'),#'/home/wollex/Data/Science/PhD/Thesis/pics/Methods',
+            'pathFigures': os.path.join(pathResults,f'figures'),#'/home/wollex/Data/Science/PhD/Thesis/pics/Methods',
             
             ### provide names for distinct result files (needed?)
-            'pathResults':              os.path.join(pathResults,'PC_fields%s.pkl'%suffix),
-            'pathResults_status':       os.path.join(pathResults,'PC_fields%s_status.pkl'%suffix),
-            'pathResults_fields':       os.path.join(pathResults,'PC_fields%s_para.pkl'%suffix),
-            'pathResults_firingstats':  os.path.join(pathResults,'PC_fields%s_firingstats.pkl'%suffix),
+            'pathResults':              os.path.join(pathResults,'placefields{suffix}.pkl'),
+            # 'pathResults_status':       os.path.join(pathResults,'PC_fields%s_status.pkl'%suffix),
+            # 'pathResults_fields':       os.path.join(pathResults,'PC_fields%s_para.pkl'%suffix),
+            # 'pathResults_firingstats':  os.path.join(pathResults,'PC_fields%s_firingstats.pkl'%suffix),
         }
 
 

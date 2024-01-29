@@ -1,4 +1,4 @@
-import os, time, math, warnings
+import os, time, math, warnings, pickle
 
 from caiman.utils.utils import load_dict_from_hdf5
 import multiprocessing as mp
@@ -41,7 +41,7 @@ class placefield_detection:
 
         self.para = paramsClass.params
 
-        self.behavior = prepare_behavior(pathBehavior)       ## load and process behavior
+        self.behavior = prepare_behavior(pathBehavior,nbin_coarse=20)       ## load and process behavior
         self.load_neuron_data()
 
         self.PC_detect = placefield_detection_inference(self.behavior,self.para)
@@ -436,7 +436,7 @@ class placefield_detection:
         plt.tight_layout()
         plt.show(block=False)
         if sv:
-            pathSv = os.path.join(self.para['pathFigs'],'PC_detection_example_%s.png'%suffix)
+            pathSv = os.path.join(self.para['pathFigs'],'PC_detection_example_%s.png'%self.paths['suffix'])
             plt.savefig(pathSv)
             print('Figure saved @ %s'%pathSv)
 
