@@ -1,6 +1,7 @@
 import numpy as np
 import scipy as sp
 
+from scipy.special import factorial as sp_factorial
 
 class HierarchicalBayesModel:
 
@@ -29,7 +30,7 @@ class HierarchicalBayesModel:
                 inference on all neurons, but adjust log-likelihood:
                     * don't pool trial stats, but calculate logl for each trial
                     * calculate logl as probability to observe S spikes in time T (for each bin, see DM inference), 
-                        thus also make sense of silent trials 
+                        thus also make sense of silent trials)
                     * in each trial, calculate logl for 1. no field and 2. for field
                     * take placefield position, width, etc as hierarchical parameter 
                         (narrow distribution for location and baseline activity?)
@@ -43,6 +44,23 @@ class HierarchicalBayesModel:
                 check, whether another hierarchy level should estimate noise-distribution parameters for overall data 
                     (thus, running inference only once on complete session, with N*4 parameters)
         '''
+
+        def new_logl(p):
+            
+            '''
+                p = [A0,A,sigma,theta]
+            '''
+
+            p = p[...,np.newaxis]
+
+            mean_model = np.full(self.Nx,p[0,:])
+            if p.shape[0] > 1:
+                for j in [-1,0,1]:   ## loop, to have periodic boundary conditions
+
+                    mean_model += (p[slice(1,None,3),:]*np.exp(-(self.x_arr[np.newaxis,:]-p[slice(3,None,3),:]+self.x_max*j)**2/(2*p[slice(2,None,3),:]**2))).sum(0)
+            
+            
+
 
         def get_logl_vectorized(p):
             if len(p.shape)==1:
@@ -160,3 +178,9 @@ class HierarchicalBayesModel:
         return TC_func
 
 ####------------------------ end of HBM definition ----------------------------- ####
+
+
+
+def poisson_spikes(nu,N,T_total):
+    #print("poisson:",nu,T_total)
+    return np.exp(N*np.log(nu*T_total) - np.log(sp_factorial(N)) - nu*T_total)

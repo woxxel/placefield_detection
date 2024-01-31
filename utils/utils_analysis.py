@@ -58,6 +58,8 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=None,f=15.,T=None,
     
     if nbin_coarse:
         data['binpos_coarse'],_ = calculate_binpos(position,nbin_coarse)
+        data['binpos_coarse'] = data['binpos_coarse'][data['active']]
+        
         data['dwelltime_coarse'] = get_dwelltime(data['binpos_coarse'],nbin_coarse,f) 
 
     

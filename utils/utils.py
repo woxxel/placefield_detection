@@ -355,7 +355,7 @@ def get_reliability(trial_map,map,field,t):
 
     return rel, field_max, trial_field
 
-def get_firingrate(S,f=15,sd_r=1,Ns_thr=10):
+def get_firingrate(S,f=15,sd_r=1,Ns_thr=1,prctile=50):
     '''
         calculates the firing rate from a an array of spike probabilities ('S' from CaImAn) 
         by thresholding data according to multiples sd_r of estimated variance
@@ -379,23 +379,29 @@ def get_firingrate(S,f=15,sd_r=1,Ns_thr=10):
         # estimate noise level by using median value (assuming most entries are not actual spikes)
         # and obtain values below median to estimate variance from negative half-gaussian distribution
         trace = S[S>0]
-        baseline = np.median(trace)
-        trace -= baseline
-        trace *= -1*(trace <= 0)
+        # baseline = np.median(trace)
+        baseline = np.percentile(trace,prctile)
 
-        # calculate variance
-        Ns_baseline = (trace>0).sum()
-        noise = np.sqrt((trace**2).sum()/(Ns_baseline*(1-2/np.pi)))
+        if sd_r!=0:
+            trace -= baseline
+            trace *= -1*(trace <= 0)
 
+            # calculate variance
+            Ns_baseline = (trace>0).sum()
+            noise = np.sqrt((trace**2).sum()/(Ns_baseline*(1-2/np.pi)))
+        else:
+            noise=0
         # either use provided sd_r, or calculate multiples of variance to ensure 
         # p-value of 10% (including correction for multiple comparisons)
         sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
         firing_threshold_adapt = baseline + sd_r*noise
-
+        # print(firing_threshold_adapt)
         # number of spikes in each bin is the value multiple above calculated threshold
-        N_spikes = np.floor(S / firing_threshold_adapt).sum()
+        # activity = np.floor(S / firing_threshold_adapt)
+        activity = np.ceil(S / firing_threshold_adapt)
+        N_spikes = activity.sum()
 
-        return N_spikes/(S.shape[0]/f),firing_threshold_adapt,np.floor(S / firing_threshold_adapt)#S > firing_threshold_adapt#
+        return N_spikes/(S.shape[0]/f),firing_threshold_adapt,activity#S > firing_threshold_adapt#
 
 
 def get_firingmap(S,binpos,dwelltime=None,nbin=None):

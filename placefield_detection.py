@@ -41,7 +41,7 @@ class placefield_detection:
 
         self.para = paramsClass.params
 
-        self.behavior = prepare_behavior(pathBehavior,nbin_coarse=20)       ## load and process behavior
+        self.behavior = prepare_behavior(pathBehavior,nbin=nbin,nbin_coarse=20)       ## load and process behavior
         self.load_neuron_data()
 
         self.PC_detect = placefield_detection_inference(self.behavior,self.para)
@@ -50,9 +50,10 @@ class placefield_detection:
 
     def process_session(self,S=None,
           f_max=1,
-          specific_n=None,dataSet='OnACID_results.hdf5',
+          specific_n=None,
+        #   dataSet='OnACID_results.hdf5',
+        #   artificial=False,
           return_results=False,rerun=False,
-          artificial=False,
           mode_info='MI',mode_activity='spikes',assignment=None):
 
         global t_start

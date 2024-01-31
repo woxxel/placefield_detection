@@ -84,7 +84,7 @@ class placefield_detection_inference:
 
 
         self.get_correlated_trials(smooth=2)
-
+        
         firingstats_tmp = self.get_firingstats_from_trials(self.firingstats['trial_map'])
         for key in firingstats_tmp.keys():
             self.firingstats[key] = firingstats_tmp[key]
@@ -157,7 +157,7 @@ class placefield_detection_inference:
         activity['S'] = self.S[self.behavior['active']]
 
         ### calculate firing rate
-        self.firingstats['rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=self.para['f'],sd_r=self.para['Ca_thr'])
+        self.firingstats['rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=self.para['f'],sd_r=self.para['Ca_thr'],Ns_thr=1,prctile=10)
 
         activity['s'] = activity[key_S]
         
@@ -375,7 +375,6 @@ class placefield_detection_inference:
 
             #firingmap_bs[:,L] = np.nanmean(trials_firingmap[base_sample[L,:],:]/ self.behavior['trials']['dwelltime'][base_sample[L,:],:],0)
         firingstats['map'] = np.nanmean(firingmap_bs,0)
-
         if complete:
             ## parameters of gamma distribution can be directly inferred from mean and std
             firingstats['std'] = np.nanstd(firingmap_bs,0)
