@@ -98,7 +98,7 @@ class placefield_detection:
         #     idx_process = assignment
         #     print(idx_process)
         # else:
-
+        
         idx_process = np.arange(self.nCells)
         nCells_process = len(idx_process)
 

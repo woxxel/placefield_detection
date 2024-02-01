@@ -324,7 +324,7 @@ class placefield_detection_inference:
 
         if mode == 'MI':
             p_joint = self.get_p_joint(activity)   ## need activity trace
-            return get_MI(p_joint,dwelltime/dwelltime.sum(),self.para['qtl_weight'])
+            return get_MI(p_joint,dwelltime/dwelltime.sum(),np.full(self.para['qtl_steps'],1/self.para['qtl_steps']))
 
         elif mode == 'Isec':
             fmap = get_firingmap(activity,self.behavior['binpos_coarse'],dwelltime,nbin=self.para['nbin_coarse'])
