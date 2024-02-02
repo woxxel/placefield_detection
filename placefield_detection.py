@@ -291,7 +291,7 @@ class placefield_detection:
         highlight_trial = False
         if (S is None) and ~hasattr(self,'S'):
             # pathDat = os.path.join(self.para['pathSession'],'results_redetect.mat')
-            pathDat = os.path.join(self.para['pathSession'],'OnACID_results.hdf5')
+            pathDat = os.path.join(self.para['pathSession'],f'OnACID_results{suffix}.hdf5')
             ld = loadmat(pathDat,variable_names=['S','C'])
             self.S = ld['S']
             self.C = ld['C']
@@ -312,9 +312,7 @@ class placefield_detection:
         self.results = {}
         if results is None:
             print('reimplement loading results')
-            # self.results['status'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_status'])[0]+'.pkl'))
-            # self.results['fields'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_fields'])[0]+'.pkl'))
-            # self.results['firingstats'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_firingstats'])[0]+'.pkl'))
+
         else:
             self.results['status'] = results['status']
             self.results['fields'] = results['fields']
