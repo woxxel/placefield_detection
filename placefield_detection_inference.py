@@ -19,7 +19,7 @@ import ultranest
 import ultranest.stepsampler
 # implement instead !! https://dynesty.readthedocs.io/en/latest/overview.html
 
-from .utils import build_struct_PC_results, get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number, shuffling
+from .utils import build_struct_PC_results, get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number, shuffling, prepare_activity
 
 from .HierarchicalBayesInference import *
 
@@ -66,8 +66,10 @@ class placefield_detection_inference:
 
 
         ### get overall as well as trial-specific activity and firingmap stats
-        self.prepare_activity()
-        if self.firingstats['rate']==0:
+        self.activity = prepare_activity(S,self.behavior['active'],self.behavior['trials'],nbin=self.para['nbin'],f=self.para['f'])
+
+
+        if self.activity['firing_rate']==0:
             print('no activity for this neuron')
             return self.return_results()
 
@@ -85,7 +87,7 @@ class placefield_detection_inference:
 
         self.get_correlated_trials(smooth=2)
         
-        firingstats_tmp = self.get_firingstats_from_trials(self.firingstats['trial_map'])
+        firingstats_tmp = self.get_firingstats_from_trials(self.activity['trial_map'])
         for key in firingstats_tmp.keys():
             self.firingstats[key] = firingstats_tmp[key]
         
@@ -96,7 +98,7 @@ class placefield_detection_inference:
                 # print(f'skipping trial {t}')
                 continue
 
-            firingstats_tmp = self.get_firingstats_from_trials(self.firingstats['trial_map'],trials,complete=False)
+            firingstats_tmp = self.get_firingstats_from_trials(self.activity['trial_map'],trials,complete=False)
 
             #print(gauss_smooth(firingstats_tmp['map'],2))
 
@@ -118,7 +120,7 @@ class placefield_detection_inference:
                     self.fields['nModes'] += 1
 
                     ## reliability is calculated later
-                    self.fields['reliability'][t], _, _ = get_reliability(self.firingstats['trial_map'],self.firingstats['map'],self.fields['parameter'],t)
+                    self.fields['reliability'][t], _, _ = get_reliability(self.activity['trial_map'],self.firingstats['map'],self.fields['parameter'],t)
 
         t_process = time.time()-t_start
 
@@ -149,54 +151,54 @@ class placefield_detection_inference:
         return {'firingstats': self.firingstats, 'status': self.status, 'fields': self.fields}
 
 
-    def prepare_activity(self):
+    # def prepare_activity(self):
 
-        key_S = 'spikes' if self.para['modes']['activity']=='spikes' else 'S'
+    #     key_S = 'spikes' if self.para['modes']['activity']=='spikes' else 'S'
 
-        activity = {}
-        activity['S'] = self.S[self.behavior['active']]
+    #     activity = {}
+    #     activity['S'] = self.S[self.behavior['active']]
 
-        ### calculate firing rate
-        self.firingstats['rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=self.para['f'],sd_r=self.para['Ca_thr'],Ns_thr=1,prctile=10)
+    #     ### calculate firing rate
+    #     self.firingstats['rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=self.para['f'],sd_r=self.para['Ca_thr'],Ns_thr=1,prctile=20)
 
-        activity['s'] = activity[key_S]
+    #     activity['s'] = activity[key_S]
         
-        ## obtain quantized firing rate for MI calculation
-        if self.para['modes']['info'] == 'MI' and self.firingstats['rate']>0:
-            activity['qtl'] = sp.ndimage.gaussian_filter(activity['s'].astype('float')*self.para['f'],self.para['sigma'])
-            # activity['qtl'] = activity['qtl'][self.behavior['active']]
-            qtls = np.quantile(activity['qtl'][activity['qtl']>0],np.linspace(0,1,self.para['qtl_steps']+1))
-            activity['qtl'] = np.count_nonzero(activity['qtl'][:,np.newaxis]>=qtls[np.newaxis,1:-1],1)
+    #     ## obtain quantized firing rate for MI calculation
+    #     if self.para['modes']['info'] == 'MI' and self.firingstats['rate']>0:
+    #         activity['qtl'] = sp.ndimage.gaussian_filter(activity['s'].astype('float')*self.para['f'],self.para['sigma'])
+    #         # activity['qtl'] = activity['qtl'][self.behavior['active']]
+    #         qtls = np.quantile(activity['qtl'][activity['qtl']>0],np.linspace(0,1,self.para['qtl_steps']+1))
+    #         activity['qtl'] = np.count_nonzero(activity['qtl'][:,np.newaxis]>=qtls[np.newaxis,1:-1],1)
         
 
-        ## obtain trial-specific activity
-        activity['trials'] = {}
-        self.firingstats['trial_map'] = np.zeros((self.behavior['trials']['ct'],self.para['nbin']))    ## preallocate
+    #     ## obtain trial-specific activity
+    #     activity['trials'] = {}
+    #     self.firingstats['trial_map'] = np.zeros((self.behavior['trials']['ct'],self.para['nbin']))    ## preallocate
 
         
-        for t in range(self.behavior['trials']['ct']):
-            activity['trials'][t] = {}
-            activity['trials'][t]['s'] = activity['s'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
+    #     for t in range(self.behavior['trials']['ct']):
+    #         activity['trials'][t] = {}
+    #         activity['trials'][t]['s'] = activity['s'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
             
-            ## prepare quantiles, if MI is to be calculated
-            if self.para['modes']['info'] == 'MI' and self.firingstats['rate']>0:
-                activity['trials'][t]['qtl'] = activity['qtl'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]];    ## should be quartiles?!
+    #         ## prepare quantiles, if MI is to be calculated
+    #         if self.para['modes']['info'] == 'MI' and self.firingstats['rate']>0:
+    #             activity['trials'][t]['qtl'] = activity['qtl'][self.behavior['trials']['start'][t]:self.behavior['trials']['start'][t+1]];    ## should be quartiles?!
 
-            if self.para['modes']['activity'] == 'spikes':
-                activity['trials'][t]['spike_times'] = np.where(activity['trials'][t]['s'])
-                activity['trials'][t]['spikes'] = activity['trials'][t]['s'][activity['trials'][t]['spike_times']]
-                activity['trials'][t]['ISI'] = np.diff(activity['trials'][t]['spike_times'])
+    #         if self.para['modes']['activity'] == 'spikes':
+    #             activity['trials'][t]['spike_times'] = np.where(activity['trials'][t]['s'])
+    #             activity['trials'][t]['spikes'] = activity['trials'][t]['s'][activity['trials'][t]['spike_times']]
+    #             activity['trials'][t]['ISI'] = np.diff(activity['trials'][t]['spike_times'])
 
-            activity['trials'][t]['rate'] = activity['trials'][t]['s'].sum()/(self.behavior['trials']['nFrames'][t]/self.para['f'])
+    #         activity['trials'][t]['rate'] = activity['trials'][t]['s'].sum()/(self.behavior['trials']['nFrames'][t]/self.para['f'])
 
-            if activity['trials'][t]['rate'] > 0:
-                self.firingstats['trial_map'][t,:] = get_firingmap(
-                    activity['trials'][t]['s'],
-                    self.behavior['trials']['binpos'][t],
-                    self.behavior['trials']['dwelltime'][t,:],
-                    self.para['nbin']
-                )#/activity['trials'][t]['rate']
-        self.activity = activity
+    #         if activity['trials'][t]['rate'] > 0:
+    #             self.firingstats['trial_map'][t,:] = get_firingmap(
+    #                 activity['trials'][t]['s'],
+    #                 self.behavior['trials']['binpos'][t],
+    #                 self.behavior['trials']['dwelltime'][t,:],
+    #                 self.para['nbin']
+    #             )#/activity['trials'][t]['rate']
+    #     self.activity = activity
         
 
 
@@ -230,7 +232,7 @@ class placefield_detection_inference:
                 shuffled_activity_qtl = np.roll(
                     np.hstack(
                         [
-                        np.roll(self.activity['trials'][t][S_key],int(random.random()*self.behavior['trials']['nFrames'][t])) 
+                            np.roll(self.activity['trials'][t][S_key],int(random.random()*self.behavior['trials']['nFrames'][t])) 
                         for t in trials
                         ]
                     ),  
@@ -343,7 +345,7 @@ class placefield_detection_inference:
 
         for q in range(self.para['qtl_steps']):
             for (x,ct) in Counter(self.behavior['binpos_coarse'][activity==q]).items():
-                p_joint[x,q] = ct;
+                p_joint[x,q] = ct
         p_joint = p_joint/p_joint.sum();    ## normalize
         return p_joint
     
@@ -397,7 +399,7 @@ class placefield_detection_inference:
     def get_correlated_trials(self,smooth=None):
 
         ## check reliability
-        corr = corr0(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
+        corr = corr0(gauss_smooth(self.activity['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
 
         # corr = np.corrcoef(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])))
         # corr = sstats.spearmanr(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
@@ -410,7 +412,7 @@ class placefield_detection_inference:
         c_trial = np.where((c_counts>self.para['trials_min_count']) & (c_counts>(self.para['trials_min_fraction']*self.behavior['trials']['ct'])))[0]
         # print('cluster',corr)
         for (i,t) in enumerate(c_trial):
-            fmap = gauss_smooth(np.nanmean(self.firingstats['trial_map'][cluster_idx.T[0]==t,:],0),2)
+            fmap = gauss_smooth(np.nanmean(self.activity['trial_map'][cluster_idx.T[0]==t,:],0),2)
             # baseline = np.percentile(fmap[fmap>0],20)
             baseline = np.nanpercentile(fmap[fmap>0],30)
             fmap2 = np.copy(fmap)
@@ -430,7 +432,7 @@ class placefield_detection_inference:
             plt.clim([0,1])
             plt.colorbar()
             plt.subplot(122)
-            corr = sstats.spearmanr(gauss_smooth(self.firingstats['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
+            corr = sstats.spearmanr(gauss_smooth(self.activity['trial_map'],smooth=(0,smooth*self.para['nbin']/self.para['L_track'])),axis=1)[0]
             # print(corr)
             ordered_corr,res_order,res_linkage = compute_serial_matrix(-(corr-1),'average')
             # Z = sp.cluster.hierarchy.linkage(-(corr-1),method='average')
@@ -445,7 +447,7 @@ class placefield_detection_inference:
                 if i<25:
                     col = color_t[int(res_linkage[i,3]-2)]
                     plt.subplot(5,5,i+1)
-                    plt.plot(np.linspace(0,self.para['L_track'],self.para['nbin']),gauss_smooth(self.firingstats['trial_map'][r,:],smooth*self.para['nbin']/self.para['L_track']),color=col)
+                    plt.plot(np.linspace(0,self.para['L_track'],self.para['nbin']),gauss_smooth(self.activity['trial_map'][r,:],smooth*self.para['nbin']/self.para['L_track']),color=col)
                     plt.ylim([0,20])
                     plt.title('trial # %d'%r)
             plt.show(block=False)
@@ -1133,7 +1135,7 @@ class placefield_detection_inference:
         plt.figure()
         ax = plt.axes([0.6,0.625,0.35,0.25])
 
-        fmap = np.nansum(self.firingstats['trial_map'][self.firingstats['trial_field'][0],:],axis=0)
+        fmap = np.nansum(self.activity['trial_map'][self.firingstats['trial_field'][0],:],axis=0)
         ax.bar(self.para['bin_array'],self.firingstats['map'],facecolor='b',width=1,alpha=0.2)
         ax.bar(self.para['bin_array'],fmap,facecolor='r',width=1,alpha=0.2)
         ax.errorbar(self.para['bin_array'],self.firingstats['map'],self.firingstats['CI'],ecolor='r',linestyle='',fmt='',elinewidth=0.3)#,label='$95\\%$ confidence')

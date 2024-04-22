@@ -13,9 +13,60 @@ from scipy.ndimage import binary_opening, gaussian_filter1d as gauss_filter
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .utils import gauss_smooth
+from .utils import gauss_smooth, get_firingmap, get_firingrate
 
-def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=None,f=15.,T=None,
+def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_steps=4):
+
+    # key_S = 'spikes' if self.para['modes']['activity']=='spikes' else 'S'
+
+    activity = {}
+    activity['S'] = S[bh_active]
+
+    ### calculate firing rate
+    activity['firing_rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=f,sd_r=0,Ns_thr=1,prctile=20)
+
+    # activity['s'] = activity[key_S]
+    
+    # ## obtain quantized firing rate for MI calculation
+    # if calc_MI == 'MI' and firing_rate>0:
+    #     sigma = 5
+    #     activity['qtl'] = sp.ndimage.gaussian_filter(activity['S'].astype('float')*f,sigma)
+    #     # activity['qtl'] = activity['qtl'][self.behavior['active']]
+    #     qtls = np.quantile(activity['qtl'][activity['qtl']>0],np.linspace(0,1,qtl_steps+1))
+    #     activity['qtl'] = np.count_nonzero(activity['qtl'][:,np.newaxis]>=qtls[np.newaxis,1:-1],1)
+    
+
+    ## obtain trial-specific activity
+    activity['trials'] = {}
+    activity['trial_map'] = np.zeros((bh_trials['ct'],nbin))    ## preallocate
+
+    
+    for t in range(bh_trials['ct']):
+        activity['trials'][t] = {}
+        activity['trials'][t]['S'] = activity['S'][bh_trials['start'][t]:bh_trials['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
+        
+        # ## prepare quantiles, if MI is to be calculated
+        # if calc_MI == 'MI' and firing_rate>0:
+        #     activity['trials'][t]['qtl'] = activity['qtl'][bh_trials['start'][t]:bh_trials['start'][t+1]];    ## should be quartiles?!
+
+        # if self.para['modes']['activity'] == 'spikes':
+        #     activity['trials'][t]['spike_times'] = np.where(activity['trials'][t]['s'])
+        #     activity['trials'][t]['spikes'] = activity['trials'][t]['s'][activity['trials'][t]['spike_times']]
+        #     activity['trials'][t]['ISI'] = np.diff(activity['trials'][t]['spike_times'])
+
+        activity['trials'][t]['rate'] = activity['trials'][t]['S'].sum()/(bh_trials['nFrames'][t]/f)
+
+        if activity['trials'][t]['rate'] > 0:
+            activity['trial_map'][t,:] = get_firingmap(
+                activity['trials'][t]['S'],
+                bh_trials['binpos'][t],
+                bh_trials['dwelltime'][t,:],
+                nbin
+            )#/activity['trials'][t]['rate']
+    return activity
+
+    
+def prepare_behavior(time_in,position_in,rw_loc_in=None,nbin=100,nbin_coarse=None,f=15.,T=None,
                                speed_gauss_sd=4,calculate_performance=False):
     '''
         loads behavior from specified path
@@ -25,21 +76,13 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=None,f=15.,T=None,
             * active    - boolean array defining active frames (included in analysis)
 
     '''
-    ### load data
-    with open(pathBehavior,'rb') as f_open:
-        loadData = pickle.load(f_open)
-
+    
     if T is None:
-        T = loadData['time'].shape[0]
+        T = time_in.shape[0]
     
-    ## first, handing over some general data
-    # data = {}
-    # for key in ['active','time','velocity']:
-    #     data[key] = loadData[key]
+    time = time_in
+    position = position_in
     
-    time = loadData['time']
-    position = loadData['position']
-    rw_pos = loadData['reward_location']*nbin
 
     binpos,environment_length = calculate_binpos(position,nbin)
 
@@ -64,6 +107,7 @@ def prepare_behavior(pathBehavior,nbin=100,nbin_coarse=None,f=15.,T=None,
 
     
     if calculate_performance:
+        rw_pos = rw_loc_in*nbin
         try:
             data['performance'] = get_performance(binpos,velocity,time,rw_pos,0,nbin,f)
         except:

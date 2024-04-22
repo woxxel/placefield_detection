@@ -371,7 +371,7 @@ def get_firingrate(S,f=15,sd_r=1,Ns_thr=1,prctile=50):
 
     '''
 
-    S[S<S.max()*10**(-4)]=0
+    S[S<S.max()*10**(-3)]=0
     Ns = (S>0).sum()
     if Ns<Ns_thr:
         return 0,np.NaN,np.zeros_like(S)

@@ -51,13 +51,12 @@ class HierarchicalBayesModel:
                 p = [A0,A,sigma,theta]
             '''
 
-            p = p[...,np.newaxis]
+            # p = p[...,np.newaxis]
 
             mean_model = np.full(self.Nx,p[0,:])
             if p.shape[0] > 1:
                 for j in [-1,0,1]:   ## loop, to have periodic boundary conditions
-
-                    mean_model += (p[slice(1,None,3),:]*np.exp(-(self.x_arr[np.newaxis,:]-p[slice(3,None,3),:]+self.x_max*j)**2/(2*p[slice(2,None,3),:]**2))).sum(0)
+                    mean_model += (p[slice(1,None,3)]*np.exp(-(self.x_arr[np.newaxis,:]-p[slice(3,None,3)]+self.x_max*j)**2/(2*p[slice(2,None,3)]**2))).sum(0)
             
             
 
@@ -67,7 +66,7 @@ class HierarchicalBayesModel:
                 p = p[np.newaxis,:]
             p = p[...,np.newaxis]
 
-            mean_model = np.ones((p.shape[0],self.Nx))*p[:,0,:]
+            mean_model = np.full((p.shape[0],self.Nx),p[:,0,:])
             if p.shape[1] > 1:
                 for j in [-1,0,1]:   ## loop, to have periodic boundary conditions
 

@@ -8,7 +8,8 @@ import numpy as np
 
 import logging
 
-from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior
+from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior, prepare_activity
+from scipy.ndimage import gaussian_filter1d as gauss_filter
 
 from .placefield_detection_inference import *
 
@@ -41,7 +42,12 @@ class placefield_detection:
 
         self.para = paramsClass.params
 
-        self.behavior = prepare_behavior(pathBehavior,nbin=nbin,nbin_coarse=20)       ## load and process behavior
+        ### load data
+        with open(pathBehavior,'rb') as f_open:
+            ld = pickle.load(f_open)
+
+
+        self.behavior = prepare_behavior(ld['time'],ld['position'],ld['reward_location'],nbin=nbin,nbin_coarse=20)       ## load and process behavior
         self.load_neuron_data()
 
         self.PC_detect = placefield_detection_inference(self.behavior,self.para)
@@ -176,6 +182,7 @@ class placefield_detection:
         if activity['S'].shape[0] > 8000:   ## check, whether array is of proper shape - threshold might need to be adjusted for other data
             activity['S'] = activity['S'].transpose()
         
+        activity['S'] = gauss_filter(activity['S'],2,axis=1)
         self.activity = activity
 
         self.nCells = activity['S'].shape[0]
