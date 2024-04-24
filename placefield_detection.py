@@ -8,7 +8,7 @@ import numpy as np
 
 import logging
 
-from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior, prepare_activity
+from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior_from_file
 from scipy.ndimage import gaussian_filter1d as gauss_filter
 
 from .placefield_detection_inference import *
@@ -42,12 +42,13 @@ class placefield_detection:
 
         self.para = paramsClass.params
 
-        ### load data
-        with open(pathBehavior,'rb') as f_open:
-            ld = pickle.load(f_open)
+        self.behavior = prepare_behavior_from_file(pathBehavior,nbin=nbin,nbin_coarse=20)       ## load and process behavior
+        # ### load data
+        # with open(pathBehavior,'rb') as f_open:
+        #     ld = pickle.load(f_open)
 
 
-        self.behavior = prepare_behavior(ld['time'],ld['position'],ld['reward_location'],nbin=nbin,nbin_coarse=20)       ## load and process behavior
+        # self.behavior = prepare_behavior(ld['time'],ld['position'],ld['reward_location'],nbin=nbin,nbin_coarse=20)       ## load and process behavior
         self.load_neuron_data()
 
         self.PC_detect = placefield_detection_inference(self.behavior,self.para)

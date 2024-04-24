@@ -65,9 +65,8 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
             )#/activity['trials'][t]['rate']
     return activity
 
-    
-def prepare_behavior(time_in,position_in,rw_loc_in=None,nbin=100,nbin_coarse=None,f=15.,T=None,
-                               speed_gauss_sd=4,calculate_performance=False):
+
+def prepare_behavior_from_file(path,nbin=100,nbin_coarse=None,f=15.,T=None,speed_gauss_sd=4,calculate_performance=False):
     '''
         loads behavior from specified path
         Requires file to contain a dictionary with values for each frame, aligned to imaging data:
@@ -76,13 +75,25 @@ def prepare_behavior(time_in,position_in,rw_loc_in=None,nbin=100,nbin_coarse=Non
             * active    - boolean array defining active frames (included in analysis)
 
     '''
+    with open(path,'rb') as f_open:
+        data = pickle.load(f_open)
+
+    return prepare_behavior(data['time'],data['position'],data['reward_location'],nbin,nbin_coarse,f,T,speed_gauss_sd,calculate_performance)
+
+    
+def prepare_behavior(time,position,rw_loc_in=None,nbin=100,nbin_coarse=None,f=15.,T=None,
+                               speed_gauss_sd=4,calculate_performance=False):
+    '''
+        prepares behavior given by time and position data
+        Requires file to contain a dictionary with values for each frame, aligned to imaging data:
+            * time      - time in seconds
+            * position  - mouse position
+            * active    - boolean array defining active frames (included in analysis)
+
+    '''
     
     if T is None:
-        T = time_in.shape[0]
-    
-    time = time_in
-    position = position_in
-    
+        T = time.shape[0]
 
     binpos,environment_length = calculate_binpos(position,nbin)
 
