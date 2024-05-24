@@ -9,9 +9,12 @@ import numpy as np
 import logging
 
 from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior_from_file
+from .utils.utils_analysis import prepare_quantiles
+
 from scipy.ndimage import gaussian_filter1d as gauss_filter
 
 from .placefield_detection_inference import *
+from .unbiased_MI.estimate_unbiased_information import estimate_unbiased_information
 
 warnings.filterwarnings("ignore")
 
@@ -50,6 +53,7 @@ class placefield_detection:
 
         # self.behavior = prepare_behavior(ld['time'],ld['position'],ld['reward_location'],nbin=nbin,nbin_coarse=20)       ## load and process behavior
         self.load_neuron_data()
+        self.activity['qtl'] = prepare_quantiles(self.activity['C'],self.behavior['active'])
 
         self.PC_detect = placefield_detection_inference(self.behavior,self.para)
 
@@ -61,7 +65,7 @@ class placefield_detection:
         #   dataSet='OnACID_results.hdf5',
         #   artificial=False,
           return_results=False,rerun=False,
-          mode_info='MI',mode_activity='spikes',assignment=None):
+          mode_info='MI',mode_MI = "BAE",mode_activity='spikes',assignment=None):
 
         global t_start
         t_start = time.time()
@@ -74,10 +78,25 @@ class placefield_detection:
         #     print('component not considered to be proper neuron')
         #     return
 
+        self.unbiased_info = estimate_unbiased_information(self.activity['qtl'], (self.behavior['binpos']/5).astype('int'))
+
+        active_ind = self.unbiased_info['firing_statistics']['sufficiently_active_cells_indexes']
+        sig_tuned_ind = self.unbiased_info['firing_statistics']['significantly_tuned_and_active_cells_indexes']
+        MI = np.full(self.nCells, np.nan)
+
+        bool_sig_tuned = [i in sig_tuned_ind for i in range(self.nCells)]
+
+        if mode_MI == "BAE":
+            MI[active_ind] = self.unbiased_info['information']['MI_BAE'].flatten()
+
+        elif mode_MI == "SSR":
+            MI[active_ind] = self.unbiased_info['information']['MI_SSR'].flatten()
+
         if not (specific_n is None):
             #self.S = S[specific_n,:]
             self.para['n'] = specific_n
-            self.PC_detect.run_detection(self.activity['S'][specific_n,:])
+            #self.PC_detect.run_detection(self.activity['S'][specific_n,:])
+            self.PC_detect.run_detection((self.activity['S'][specific_n,:], bool_sig_tuned[specific_n],MI[specific_n]))
             return
         
         # if rerun:
@@ -124,11 +143,13 @@ class placefield_detection:
 
                 for i in range(nBatch+1):
                     idx_batch = idx_process[i*batchSz:min(nCells_process,(i+1)*batchSz)]
-                    result_tmp.extend(pool.starmap(self.PC_detect.run_detection,zip(self.activity['S'][idx_batch,:])))
+                    #result_tmp.extend(pool.starmap(self.PC_detect.run_detection,zip(self.activity['S'][idx_batch,:])))
+                    result_tmp.extend(pool.starmap(self.PC_detect.run_detection,zip(self.activity['S'][idx_batch,:], bool_sig_tuned[idx_batch],MI[idx_batch])))
                     print('\n\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs\n'%(min(nCells_process,(i+1)*batchSz),nCells_process,time.time()-t_start))
         else:
             for n0,n in enumerate(idx_process):
-                result_tmp.append(self.PC_detect.run_detection(self.activity['S'][n,:]))
+                #result_tmp.append(self.PC_detect.run_detection(self.activity['S'][n,:]))
+                result_tmp.append(self.PC_detect.run_detection((self.activity['S'][n,:],bool_sig_tuned[n],MI[n])))
                 print('\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs'%(n0+1,nCells_process,time.time()-t_start))
 
 
@@ -177,6 +198,7 @@ class placefield_detection:
         ld = load_dict_from_hdf5(self.para['pathData'])
 
         activity = {}
+        activity['C'] = ld['C']
         activity['S'] = ld['S']
         activity['S'][activity['S']<0] = 0
 

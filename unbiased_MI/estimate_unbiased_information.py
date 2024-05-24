@@ -16,7 +16,7 @@ settings = {
     'dt': 1/15.,
     'active_bins_threshold': 10,
     'firing_rate_threshold': 0,
-    'estimate_only_significantly_tuned_cells': 1,
+    'estimate_only_significantly_tuned_cells': 0,
     'shuffle_type': 'cyclic',
     'num_shuffles': 1000,
     'tuning_significance_threshold': 0.05,
@@ -27,7 +27,7 @@ settings = {
     'figures_directory': [os.path.join('figures')]
 }
 
-def estimate_unbiased_information(spike_train,stimulus_trace,settings):
+def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
     '''
         This function estimates the unbiased information between the spike train and the stimulus trace.
 
@@ -64,7 +64,6 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings):
     average_firing_rates = np.mean(spike_train,axis=1)/dt
 
     sufficiently_active_cells_indexes = np.where(np.logical_and(active_bins>=active_bins_threshold,average_firing_rates>firing_rate_threshold))[0]
-    print(sufficiently_active_cells_indexes)
     fraction_sufficiently_active_cells=len(sufficiently_active_cells_indexes)/len(active_bins)
     # print(fraction_sufficiently_active_cells)
 
@@ -352,7 +351,7 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings):
                 tuning_significance_threshold = settings['tuning_significance_threshold']
                 
                 # obtaining shuffled spike trains:
-                shuffled_spike_trains = shuffle_spike_trains(spike_train[:,sufficiently_active_cells_indexes], num_shuffles, shuffle_type)
+                shuffled_spike_trains = shuffle_spike_trains(spike_train[sufficiently_active_cells_indexes,:], num_shuffles, shuffle_type)
                 
                 # Identifying significantly modulated cells:
                 if measures_to_estimate[0] or measures_to_estimate[1]: # based on the SI in active cells for naive versus shuffle
@@ -368,7 +367,7 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings):
                     # display_progress_bar('', True)
                     
                     # Finding significantly tuned cells:
-                    tuning_significance_active_cells = 1 - np.sum(np.tile(SI_naive_bit_spike, (1, num_shuffles)) > SI_shuffle_bit_spike, axis=1) / num_shuffles
+                    tuning_significance_active_cells = 1 - np.sum(np.tile(SI_naive_bit_spike[:,np.newaxis], (1, num_shuffles)) > SI_shuffle_bit_spike, axis=1) / num_shuffles
                     p_value_significantly_tuned_and_active_cells = tuning_significance_active_cells[tuning_significance_active_cells < tuning_significance_threshold]
                     significantly_tuned_and_active_cells_indexes = sufficiently_active_cells_indexes[tuning_significance_active_cells < tuning_significance_threshold]
                 elif measures_to_estimate[2]: # based on the MI in active cells for naive versus shuffle

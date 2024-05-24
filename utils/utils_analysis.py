@@ -8,12 +8,37 @@
 '''
 
 import pickle
+import scipy as sp
 from scipy import signal
 from scipy.ndimage import binary_opening, gaussian_filter1d as gauss_filter
 import numpy as np
 import matplotlib.pyplot as plt
 
 from .utils import gauss_smooth, get_firingmap, get_firingrate
+
+
+def prepare_quantiles(C,bh_active,f=15.,qtl_steps=4):
+
+    activity = {}
+    activity['C'] = C[:,bh_active]
+
+    ### calculate firing rate
+    activity['firing_rate'], _, activity['spikes'] = get_firingrate(activity['C'],f=f,sd_r=0,Ns_thr=1,prctile=20)
+    
+    # ## obtain quantized firing rate for MI calculation
+    if activity['firing_rate']>0:
+        sigma = 5
+        
+        activity['qtl'] = sp.ndimage.gaussian_filter(activity['C'].astype('float')*f,sigma)
+        # activity['qtl'] = activity['qtl'][self.behavior['active']]
+        qtls = np.quantile(activity['qtl'][activity['qtl']>0],np.linspace(0,1,qtl_steps+1))
+
+        for i in range(activity['qtl'].shape[0]):
+            activity['qtl'][i] = np.count_nonzero(activity['qtl'][i, :, np.newaxis] >= qtls[np.newaxis, 1:-1], axis=1)
+
+
+    return activity['qtl']
+
 
 def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_steps=4):
 
