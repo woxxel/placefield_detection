@@ -74,14 +74,14 @@ class placefield_detection_inference:
             return self.return_results()
 
 
-        ## calculate mutual information 
-        ## check if (computational cost of) finding fields is worth it at all
-        t_start = time.time()
-        if self.para['modes']['info']:
-            MI_tmp = self.test_MI()
-            for key in MI_tmp.keys():
-                self.status[key] = MI_tmp[key]
-        #print('time taken (information): %.4f'%(time.time()-t_start))
+        # ## calculate mutual information 
+        # ## check if (computational cost of) finding fields is worth it at all
+        # t_start = time.time()
+        # if self.para['modes']['info']:
+        #     MI_tmp = self.test_MI()
+        #     for key in MI_tmp.keys():
+        #         self.status[key] = MI_tmp[key]
+        # #print('time taken (information): %.4f'%(time.time()-t_start))
 
 
 
@@ -214,7 +214,7 @@ class placefield_detection_inference:
         Isec_rand_distr = np.zeros(self.para['repnum'])*np.NaN
 
         ### first, get actual MI value
-        frate = gauss_smooth(self.activity['s']*self.para['f'],self.para['sigma'])
+        frate = gauss_smooth(self.activity[S_key],self.para['sigma']*self.para['f'])
 
         MI['MI_value'] = self.get_info_value(self.activity[S_key],self.behavior['dwelltime_coarse'],mode='MI')
         MI['Isec_value'] = self.get_info_value(frate,self.behavior['dwelltime_coarse'],mode='Isec')
