@@ -51,7 +51,10 @@ class placefield_detection_inference:
 
         '''
 
-        self.S = S
+        s, bool_sig, MI = S
+  
+        self.S = s
+        #self.S = S
 
         t_start = time.time()
         results = build_struct_PC_results(1,self.para['nbin'],self.behavior['trials']['ct'],1+len(self.para['CI_arr']))
@@ -66,7 +69,7 @@ class placefield_detection_inference:
 
 
         ### get overall as well as trial-specific activity and firingmap stats
-        self.activity = prepare_activity(S,self.behavior['active'],self.behavior['trials'],nbin=self.para['nbin'],f=self.para['f'])
+        self.activity = prepare_activity(self.S,self.behavior['active'],self.behavior['trials'],nbin=self.para['nbin'],f=self.para['f'])
 
 
         if self.activity['firing_rate']==0:
@@ -74,14 +77,14 @@ class placefield_detection_inference:
             return self.return_results()
 
 
-        # ## calculate mutual information 
-        # ## check if (computational cost of) finding fields is worth it at all
-        # t_start = time.time()
-        # if self.para['modes']['info']:
-        #     MI_tmp = self.test_MI()
-        #     for key in MI_tmp.keys():
-        #         self.status[key] = MI_tmp[key]
-        # #print('time taken (information): %.4f'%(time.time()-t_start))
+        ## calculate mutual information 
+        ## check if (computational cost of) finding fields is worth it at all
+        t_start = time.time()
+        #if self.para['modes']['info']:
+            #MI_tmp = self.test_MI()
+            #for key in MI_tmp.keys():
+                #self.status[key] = MI_tmp[key]
+        #print('time taken (information): %.4f'%(time.time()-t_start))
 
 
 
