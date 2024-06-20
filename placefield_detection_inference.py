@@ -63,7 +63,6 @@ class placefield_detection_inference:
         self.status = results['status']
         self.fields = results['fields']
 
-        
         # self.status['SNR'] = SNR
         # self.status['r_value'] = r_value
 
