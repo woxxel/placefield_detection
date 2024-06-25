@@ -57,9 +57,14 @@ def calculate_hsm(data,sort_it=True):
   if np.all(data == data[0]):
     return data[0]
   
+  data = data[data>0] # remove 0 entries
   if sort_it:
     data = np.sort(data)
+  
 
+  # switch through different cases, depending on number of remaining datapoints:
+  # for size <= 3, return result
+  # for size > 3, find flattest part of the data over length size/2 and call function recursively
   if data.size == 1:
     return data[0]
   elif data.size == 2:
@@ -394,11 +399,12 @@ def get_firingrate(S,f=15,sd_r=1,Ns_thr=1,prctile=50):
         # either use provided sd_r, or calculate multiples of variance to ensure 
         # p-value of 10% (including correction for multiple comparisons)
         sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
+        print(sd_r)
         firing_threshold_adapt = baseline + sd_r*noise
         # print(firing_threshold_adapt)
         # number of spikes in each bin is the value multiple above calculated threshold
-        # activity = np.floor(S / firing_threshold_adapt)
-        activity = np.ceil(S / firing_threshold_adapt)
+        activity = np.floor(S / firing_threshold_adapt)
+        # activity = np.ceil(S / firing_threshold_adapt)
         N_spikes = activity.sum()
 
         return N_spikes/(S.shape[0]/f),firing_threshold_adapt,activity#S > firing_threshold_adapt#

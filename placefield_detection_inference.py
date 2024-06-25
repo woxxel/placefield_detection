@@ -39,7 +39,7 @@ class placefield_detection_inference:
 
 
 
-    def run_detection(self,S):
+    def run_detection(self,s,bool_sig,MI):
         '''
             function to find place fields in neuron activity S
             relies on behavior data being loaded into the class,
@@ -51,7 +51,7 @@ class placefield_detection_inference:
 
         '''
 
-        s, bool_sig, MI = S
+        # s, bool_sig, MI = S
   
         self.S = s
         #self.S = S
@@ -95,6 +95,7 @@ class placefield_detection_inference:
         
         # if np.any(self.firingstats['trial_field']) and ((self.status['SNR']>2) or np.isnan(self.status['SNR'])):  # and (self.status['MI_value']>0.1)     ## only do further processing, if enough trials are significantly correlated
         for t in range(5):
+            # continue
             trials = np.where(self.firingstats['trial_field'][t,:])[0]
             if len(trials)<1:
                 # print(f'skipping trial {t}')
@@ -958,15 +959,17 @@ class placefield_detection_inference:
         add_number(fig,ax_acorr,order=2,offset=[-50,10])
 
         idx_longrun = self.behavior['active']
-        t_longrun = self.behavior['time'][idx_longrun]
-        t_stop = self.behavior['time'][~idx_longrun]
+
+        time = np.linspace(0,600,len(S_raw))
+        t_longrun = self.behavior['time_raw'][idx_longrun]
+        t_stop = self.behavior['time_raw'][~idx_longrun]
         ax_Ca.bar(t_stop,np.ones(len(t_stop))*1.2*S_raw.max(),color=[0.9,0.9,0.9],zorder=0)
 
-        ax_Ca.fill_between([self.behavior['trials']['start_t'][n_trial],self.behavior['trials']['start_t'][n_trial+1]],[0,0],[1.2*S_raw.max(),1.2*S_raw.max()],color=[0,0,1,0.2],zorder=1)
+        ax_Ca.fill_between([self.behavior['time'][self.behavior['trials']['start'][n_trial]],self.behavior['time'][self.behavior['trials']['start'][n_trial+1]]],[0,0],[1.2*S_raw.max(),1.2*S_raw.max()],color=[0,0,1,0.2],zorder=1)
 
-        ax_Ca.plot(self.behavior['time'],C,'k',linewidth=0.2)
-        ax_Ca.plot(self.behavior['time'],S_raw,'r',linewidth=1)
-        ax_Ca.plot([0,self.behavior['time'][-1]],[S_thr,S_thr])
+        ax_Ca.plot(self.behavior['time_raw'],C,'k',linewidth=0.2)
+        ax_Ca.plot(self.behavior['time_raw'],S_raw,'r',linewidth=1)
+        ax_Ca.plot([0,self.behavior['time_raw'][-1]],[S_thr,S_thr])
         ax_Ca.set_ylim([0,1.2*S_raw.max()])
         ax_Ca.set_xlim([t_start,t_end])
         ax_Ca.set_xticks([])
@@ -974,16 +977,16 @@ class placefield_detection_inference:
         ax_Ca.set_yticks([])
 
 
-        ax_loc.plot(self.behavior['time'],self.behavior['binpos'],'.',color='k',zorder=5,markeredgewidth=0,markersize=1.5)
+        ax_loc.plot(self.behavior['time_raw'],self.behavior['binpos_raw'],'.',color='k',zorder=5,markeredgewidth=0,markersize=1.5)
         idx_active = (S>0) & self.behavior['active']
         idx_inactive = (S>0) & ~self.behavior['active']
 
-        t_active = self.behavior['time'][idx_active]
-        pos_active = self.behavior['binpos'][idx_active]
+        t_active = self.behavior['time_raw'][idx_active]
+        pos_active = self.behavior['binpos_raw'][idx_active]
         S_active = S[idx_active]
 
-        t_inactive = self.behavior['time'][idx_inactive]
-        pos_inactive = self.behavior['binpos'][idx_inactive]
+        t_inactive = self.behavior['time_raw'][idx_inactive]
+        pos_inactive = self.behavior['binpos_raw'][idx_inactive]
         S_inactive = S[idx_inactive]
         if self.para['modes']['activity'] == 'spikes':
             ax_loc.scatter(t_active,pos_active,s=3,color='r',zorder=10)
@@ -992,7 +995,7 @@ class placefield_detection_inference:
             ax_loc.scatter(t_active,pos_active,s=(S_active/S.max())**2*10+0.1,color='r',zorder=10)
             ax_loc.scatter(t_inactive,pos_inactive,s=(S_inactive/S.max())**2*10+0.1,color='k',zorder=10)
         ax_loc.bar(t_stop,np.ones(len(t_stop))*self.para['L_track'],width=1/15,color=[0.9,0.9,0.9],zorder=0)
-        ax_loc.fill_between([self.behavior['trials']['start_t'][n_trial],self.behavior['trials']['start_t'][n_trial+1]],[0,0],[self.para['nbin'],self.para['nbin']],color=[0,0,1,0.2],zorder=1)
+        ax_loc.fill_between([self.behavior['time'][self.behavior['trials']['start'][n_trial]],self.behavior['time'][self.behavior['trials']['start'][n_trial+1]]],[0,0],[self.para['nbin'],self.para['nbin']],color=[0,0,1,0.2],zorder=1)
 
         ax_loc.set_ylim([0,self.para['nbin']])
         ax_loc.set_xlim([t_start,t_end])

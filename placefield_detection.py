@@ -8,7 +8,7 @@ import numpy as np
 
 import logging
 
-from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior_from_file
+from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior_from_file, prepare_activity, get_firingstats_from_trials, get_spikeNr
 from .utils.utils_analysis import prepare_quantiles
 
 from scipy.ndimage import gaussian_filter1d as gauss_filter
@@ -78,25 +78,33 @@ class placefield_detection:
         #     print('component not considered to be proper neuron')
         #     return
 
-        self.unbiased_info = estimate_unbiased_information(self.activity['qtl'], (self.behavior['binpos']/5).astype('int'))
-
-        active_ind = self.unbiased_info['firing_statistics']['sufficiently_active_cells_indexes']
-        sig_tuned_ind = self.unbiased_info['firing_statistics']['significantly_tuned_and_active_cells_indexes']
+        calc_MI = False
         MI = np.full(self.nCells, np.nan)
 
-        bool_sig_tuned = [i in sig_tuned_ind for i in range(self.nCells)]
+        if calc_MI:
+            self.unbiased_info = estimate_unbiased_information(self.activity['qtl'], (self.behavior['binpos']/5).astype('int'))
 
-        if mode_MI == "BAE":
-            MI[active_ind] = self.unbiased_info['information']['MI_BAE'].flatten()
+            active_ind = self.unbiased_info['firing_statistics']['sufficiently_active_cells_indexes']
+            sig_tuned_ind = self.unbiased_info['firing_statistics']['significantly_tuned_and_active_cells_indexes']
 
-        elif mode_MI == "SSR":
-            MI[active_ind] = self.unbiased_info['information']['MI_SSR'].flatten()
+            bool_sig_tuned = [i in sig_tuned_ind for i in range(self.nCells)]
+
+            if mode_MI == "BAE":
+                MI[active_ind] = self.unbiased_info['information']['MI_BAE'].flatten()
+
+            elif mode_MI == "SSR":
+                MI[active_ind] = self.unbiased_info['information']['MI_SSR'].flatten()
+        else:
+            bool_sig_tuned = np.full(self.nCells, True)
+        
+        self.bool_sig_tuned = bool_sig_tuned
+        self.MI = MI
 
         if not (specific_n is None):
             #self.S = S[specific_n,:]
             self.para['n'] = specific_n
             #self.PC_detect.run_detection(self.activity['S'][specific_n,:])
-            self.PC_detect.run_detection((self.activity['S'][specific_n,:], bool_sig_tuned[specific_n],MI[specific_n]))
+            self.PC_detect.run_detection(self.activity['S'][specific_n,:], bool_sig_tuned[specific_n],MI[specific_n])
             return
         
         # if rerun:
@@ -149,7 +157,7 @@ class placefield_detection:
         else:
             for n0,n in enumerate(idx_process):
                 #result_tmp.append(self.PC_detect.run_detection(self.activity['S'][n,:]))
-                result_tmp.append(self.PC_detect.run_detection((self.activity['S'][n,:],bool_sig_tuned[n],MI[n])))
+                result_tmp.append(self.PC_detect.run_detection(self.activity['S'][n,:],bool_sig_tuned[n],MI[n]))
                 print('\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs'%(n0+1,nCells_process,time.time()-t_start))
 
 
@@ -205,7 +213,7 @@ class placefield_detection:
         if activity['S'].shape[0] > 8000:   ## check, whether array is of proper shape - threshold might need to be adjusted for other data
             activity['S'] = activity['S'].transpose()
         
-        activity['S'] = gauss_filter(activity['S'],2,axis=1)
+        # activity['S'] = gauss_filter(activity['S'],2,axis=1)
         self.activity = activity
 
         self.nCells = activity['S'].shape[0]
@@ -469,32 +477,141 @@ class placefield_detection:
             plt.savefig(pathSv)
             print('Figure saved @ %s'%pathSv)
 
+    
+
+    def plot_activity(self,n,activity_mode='calcium',sv=False,suffix=''):
+
+        n_trial = 4
+
+        fig = plt.figure(figsize=(7,5),dpi=150)
+        ax_Ca = plt.axes([0.1,0.7,0.7,0.25])
+        # add_number(fig,ax_Ca,order=1)
+        ax_loc = plt.axes([0.1,0.15,0.7,0.55])
+        ax1 = plt.axes([0.8,0.15,0.175,0.55])
+
+        time = self.behavior['time_raw']
+        C = self.activity['C'][n,:]
+
+        #S_raw = self.S
+
+
+        activity = prepare_activity(self.activity['S'][n,:],self.behavior['active'],self.behavior['trials'],nbin=self.para['nbin'],f=self.para['f'])
+
+        # firingmap = self.get_and_plot_firingmap(n)
+        firingstats = get_firingstats_from_trials(activity['trial_map'],self.behavior['trials']['dwelltime'],N_bs=100)
+
+
+        # S_raw = self.activity['S'][n,:]
+        S = activity['S']
+        # S,S_thr,_ = get_spikeNr(S_raw)
+        # rate,S_thr,S = get_firingrate(self.activity['S'][n,:],f=self.para['f'],sd_r=1)
+        # _,S_thr,_ = get_firingrate(S_raw[self.behavior['active']],f=self.para['f'],sd_r=self.para['Ca_thr'])
+        # if activity_mode == 'spikes':
+        #     print('spikes')
+        #     S = S_raw>S_thr
+        # else:
+        #     S = S_raw
+
+        idx_longrun = self.behavior['active']
+
+        # time = np.linspace(0,600,len(S))
+        # t_longrun = time[idx_longrun]
+        t_stop = time[~idx_longrun]
+        ax_Ca.bar(t_stop,np.ones(len(t_stop))*1.2*S.max(),color=[0.9,0.9,0.9],zorder=0)
+
+        ax_Ca.fill_between([self.behavior['time'][self.behavior['trials']['start'][n_trial]],self.behavior['time'][self.behavior['trials']['start'][n_trial+1]]],[0,0],[1.2*S.max(),1.2*S.max()],color=[0,0,1,0.2],zorder=1)
+
+        ax_Ca.plot(time,C,'k',linewidth=0.2)
+        ax_Ca.plot(time,S,'r',linewidth=1)
+        # ax_Ca.plot(time[[0-1]],[S_thr,S_thr])
+        ax_Ca.set_ylim([0,1.2*S.max()])
+        ax_Ca.set_xlim(time[[0,-1]])
+        ax_Ca.set_xticks([])
+        ax_Ca.set_ylabel('Ca$^{2+}$')
+        ax_Ca.set_yticks([])
+
+
+        ax_loc.plot(time,self.behavior['binpos_raw'],'.',color='k',zorder=5,markeredgewidth=0,markersize=1.5)
+        idx_active = (S>0) & self.behavior['active']
+        idx_inactive = (S>0) & ~self.behavior['active']
+
+        t_active = time[idx_active]
+        pos_active = self.behavior['binpos_raw'][idx_active]
+        S_active = S[idx_active]
+
+        t_inactive = time[idx_inactive]
+        pos_inactive = self.behavior['binpos_raw'][idx_inactive]
+        S_inactive = S[idx_inactive]
+        # if self.para['modes']['activity'] == 'spikes':
+        #     ax_loc.scatter(t_active,pos_active,s=3,color='r',zorder=10)
+        #     ax_loc.scatter(t_inactive,pos_inactive,s=3,color='k',zorder=10)
+        # else:
+        # ax_loc.scatter(t_active,pos_active,s=(S_active/S.max())**2*10+0.1,color='r',zorder=10)
+        # ax_loc.scatter(t_inactive,pos_inactive,s=(S_inactive/S.max())**2*10+0.1,color='k',zorder=10)
+        
+        ax_loc.scatter(t_active,pos_active,s=np.minimum(8,S_active+2),color='r',zorder=10)
+        ax_loc.scatter(t_inactive,pos_inactive,s=np.minimum(8,S_inactive+2),color='k',zorder=10)
+
+
+        ax_loc.bar(t_stop,np.ones(len(t_stop))*self.para['L_track'],width=1/15,color=[0.9,0.9,0.9],zorder=0)
+        ax_loc.fill_between([self.behavior['time'][self.behavior['trials']['start'][n_trial]],self.behavior['time'][self.behavior['trials']['start'][n_trial+1]]],[0,0],[self.para['nbin'],self.para['nbin']],color=[0,0,1,0.2],zorder=1)
+
+        ax_loc.set_ylim([0,self.para['nbin']])
+        ax_loc.set_xlim(time[[0,-1]])
+        ax_loc.set_xlabel('time [s]')
+        ax_loc.set_ylabel('position [bins]')
+
+
+
+        i = 25
+        ax1.barh(self.para['bin_array'],firingstats['map'],facecolor='b',alpha=0.2,height=1,label='$\\bar{\\nu}$')
+        ax1.barh(self.para['bin_array'][i],firingstats['map'][i],facecolor='b',height=1)
+
+        ax1.errorbar(firingstats['map'],self.para['bin_array'],xerr=firingstats['CI'],ecolor='r',linewidth=0.2,linestyle='',fmt='',label='1 SD confidence')
+        # Y = trials_fmap/self.behavior['trials']['dwelltime']
+        # mask = ~np.isnan(Y)
+        # Y = [y[m] for y, m in zip(Y.T, mask.T)]
+
+        # #flierprops = dict(marker='.', markerfacecolor='k', markersize=0.5)
+        # #h_bp = ax1.boxplot(Y,flierprops=flierprops)#,positions=self.para['bin_array'])
+        ax1.set_yticks([])#np.linspace(0,100,6))
+        #ax1.set_yticklabels(np.linspace(0,100,6).astype('int'))
+        ax1.set_ylim([0,self.para['nbin']])
+
+        # ax1.set_xlim([0,np.nanmax(fr_mu[np.isfinite(fr_mu)])*1.2])
+        # ax1.set_xticks([])
+        #ax1.set_xlabel('Ca$^{2+}$-event rate $\\nu$')
+        ax1.spines['right'].set_visible(False)
+        ax1.spines['top'].set_visible(False)
+        #ax1.set_ylabel('Position on track')
+        ax1.legend(title='# trials = %d'%self.behavior['trials']['ct'],loc='lower left',bbox_to_anchor=[0.55,0.025],fontsize=8)#[h_bp['boxes'][0]],['trial data'],
+
+
+
+        return
+
+
+
+
+    def get_and_plot_firingmap(self,n):
+
+        # spikeNr,_,_ = get_spikeNr(self.activity['S'][n,:])
+        activity = prepare_activity(self.activity['S'][n,:],self.behavior['active'],self.behavior['trials'],nbin=self.para['nbin'],f=self.para['f'])
+        # return activity
+
+        firingstats = get_firingstats_from_trials(activity['trial_map'],self.behavior['trials']['dwelltime'],N_bs=100)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(121)   
+        ax.plot(self.behavior['time_raw'],activity['S'],'r',linewidth=0.3)
+
+        ax = fig.add_subplot(122)
+        ax.bar(self.para['bin_array'],firingstats['map'],facecolor='b',width=1,alpha=0.2)
+        # ax.bar(self.para['bin_array'],fmap,facecolor='r',width=1,alpha=0.2)
+        ax.errorbar(self.para['bin_array'],firingstats['map'],firingstats['CI'],ecolor='r',linestyle='',fmt='',elinewidth=0.3)
+        
+        plt.show(block=False)
+
+        return firingstats
 
 #### ---------------- end of class definition -----------------
-
-
-
-
-def get_spikeNr(data):
-
-    if np.count_nonzero(data)==0:
-        return 0,np.NaN,np.NaN
-    else:
-        md = calculate_hsm(data,True);       #  Find the mode
-
-        # only consider values under the mode to determine the noise standard deviation
-        ff1 = data - md;
-        ff1 = -ff1 * (ff1 < 0);
-
-        # compute 25 percentile
-        ff1.sort()
-        ff1[ff1==0] = np.NaN
-        Ns = round((ff1>0).sum() * .5).astype('int')
-
-        # approximate standard deviation as iqr/1.349
-        iqr_h = ff1[-Ns];
-        sd_r = 2 * iqr_h / 1.349;
-        data_thr = md+2*sd_r;
-        spikeNr = np.floor(data/data_thr).sum();
-        return spikeNr,md,sd_r
-

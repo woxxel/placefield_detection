@@ -14,7 +14,7 @@ from scipy.ndimage import binary_opening, gaussian_filter1d as gauss_filter
 import numpy as np
 import matplotlib.pyplot as plt
 
-from .utils import gauss_smooth, get_firingmap, get_firingrate
+from .utils import gauss_smooth, get_firingmap, get_firingrate, calculate_hsm
 
 
 def prepare_quantiles(C,bh_active,f=15.,qtl_steps=4):
@@ -48,9 +48,10 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
     activity['S'] = S[bh_active]
 
     ### calculate firing rate
-    activity['firing_rate'], _, activity['spikes'] = get_firingrate(activity['S'],f=f,sd_r=0,Ns_thr=1,prctile=20)
+    activity['firing_rate'], _, activity['S'] = get_firingrate(S,f=f,sd_r=-1,Ns_thr=1,prctile=20)  
 
-    # activity['s'] = activity[key_S]
+    S_active = gauss_filter(activity['S'],1)[bh_active]
+    # activity['S'] = activity[key_S]
     
     # ## obtain quantized firing rate for MI calculation
     # if calc_MI == 'MI' and firing_rate>0:
@@ -68,7 +69,7 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
     
     for t in range(bh_trials['ct']):
         activity['trials'][t] = {}
-        activity['trials'][t]['S'] = activity['S'][bh_trials['start'][t]:bh_trials['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
+        activity['trials'][t]['S'] = S_active[bh_trials['start'][t]:bh_trials['start'][t+1]]#gauss_smooth(active['S'][self.behavior['trials']['frame'][t]:self.behavior['trials']['frame'][t+1]]*self.para['f'],self.para['f']);    ## should be quartiles?!
         
         # ## prepare quantiles, if MI is to be calculated
         # if calc_MI == 'MI' and firing_rate>0:
@@ -89,6 +90,49 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
                 nbin
             )#/activity['trials'][t]['rate']
     return activity
+
+
+def get_firingstats_from_trials(trial_firingmap,trial_dwelltime,trials=None,N_bs=100,complete=True):
+
+    '''
+        construct firing rate map from bootstrapping over (normalized) trial firing maps
+    '''
+
+    trial_ct,nbin = trial_firingmap.shape
+    if trials is None:
+        trials = np.arange(trial_ct)
+    
+    firingstats = {}
+    firingmap_bs = np.zeros((N_bs,nbin))
+
+    base_sample = np.random.randint(0,len(trials),(N_bs,len(trials)))
+
+    for L in range(N_bs):
+        # dwelltime = trial_dwelltime[base_sample[L,:],:].sum(0)
+        firingmap_bs[L,:] = np.nanmean(trial_firingmap[trials[base_sample[L,:]],:],0)#/dwelltime
+        # mask = (dwelltime==0)
+        # firingmap_bs[L,mask] = np.NaN
+
+        #firingmap_bs[:,L] = np.nanmean(trials_firingmap[base_sample[L,:],:]/ self.behavior['trials']['dwelltime'][base_sample[L,:],:],0)
+    firingstats['map'] = np.nanmean(firingmap_bs,0)
+    if complete:
+        ## parameters of gamma distribution can be directly inferred from mean and std
+        firingstats['std'] = np.nanstd(firingmap_bs,0)
+        firingstats['std'][firingstats['std']==0] = np.nanmean(firingstats['std'])
+        
+        prc = [2.5,97.5]
+        firingstats['CI'] = np.nanpercentile(firingmap_bs,prc,0);   ## width of gaussian - from 1-SD confidence interval
+
+        ### fit linear dependence of noise on amplitude (with 0 noise at fr=0)
+        # firingstats['parNoise'] = jackknife(firingstats['map'],firingstats['std'])
+    
+        # if self.para['plt_theory_bool'] and self.para['plt_bool']:
+        #     self.plt_model_selection(firingmap_bs.T,firingstats,trials_firingmap)
+
+    firingstats['map'] = np.maximum(firingstats['map'],1/trial_dwelltime.sum(0))#1/(self.para['nbin'])     ## set 0 firing rates to lowest possible (0 leads to problems in model, as 0 noise, thus likelihood = 0)
+    firingstats['map'][trial_dwelltime.sum(0)<0.2] = np.NaN#1/(self.para['nbin']*self.behavior['T'])
+    ### estimate noise of model
+    return firingstats
 
 
 def prepare_behavior_from_file(path,nbin=100,nbin_coarse=None,f=15.,T=None,speed_gauss_sd=4,calculate_performance=False):
@@ -129,6 +173,9 @@ def prepare_behavior(time,position,rw_loc_in=None,nbin=100,nbin_coarse=None,f=15
     ### preparing data for active periods, only
     data['nFrames'] = np.count_nonzero(data['active'])
     
+    data['binpos_raw'] = binpos
+    data['time_raw'] = time
+    data['velocity_raw'] = velocity
     data['binpos'] = binpos[data['active']]
     data['time'] = time[data['active']]
     data['velocity'] = velocity[data['active']]
@@ -401,17 +448,17 @@ def get_spikeNr(data):
         md = calculate_hsm(data,True);       #  Find the mode
 
         # only consider values under the mode to determine the noise standard deviation
-        ff1 = data - md;
-        ff1 = -ff1 * (ff1 < 0);
+        ff1 = data - md
+        ff1 = -ff1 * (ff1 < 0)
 
         # compute 25 percentile
         ff1.sort()
         ff1[ff1==0] = np.NaN
-        Ns = round((ff1>0).sum() * .5).astype('int')
+        Ns = round((ff1>0).sum() * .5)#.astype('int')
 
         # approximate standard deviation as iqr/1.349
-        iqr_h = ff1[-Ns];
-        sd_r = 2 * iqr_h / 1.349;
-        data_thr = md+2*sd_r;
-        spikeNr = np.floor(data/data_thr).sum();
+        iqr_h = ff1[-Ns]
+        sd_r = 2 * iqr_h / 1.349
+        data_thr = md+2*sd_r
+        spikeNr = np.floor(data/data_thr)#.sum()
         return spikeNr,md,sd_r
