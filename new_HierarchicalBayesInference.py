@@ -475,8 +475,8 @@ def call_HBM(pathSession='../data/556wt/Session12',neuron=0,hierarchical=True,ru
         sampling_result = sampler.run(
             min_num_live_points=num_samples,
             max_iters=20000,cluster_num_live_points=20,max_num_improvement_loops=3,
-            #region_class=ultranest.mlfriends.SimpleRegion(),
             show_status=True,viz_callback='auto')  ## ... and run it #max_ncalls=500000,(f+1)*100,
+            #region_class=ultranest.mlfriends.SimpleRegion(),
 
         return hbm, sampling_result, sampler
 
