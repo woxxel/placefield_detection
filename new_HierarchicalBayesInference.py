@@ -4,12 +4,16 @@ from matplotlib import pyplot as plt
 
 import logging, os
 
+from .HierarchicalModelDefinition import HierarchicalModel
+
 # from ultranest.plot import cornerplot
 
 from .placefield_detection import *
 from .utils import *
 import ultranest
-from dynesty import DynamicNestedSampler, pool as dypool, utils, plotting as dyplot
+from ultranest.popstepsampler import PopulationSliceSampler, generate_region_oriented_direction
+
+from dynesty import NestedSampler, DynamicNestedSampler, pool as dypool, utils, plotting as dyplot
 
 os.environ['OMP_NUM_THREADS'] = '1'
 ultranest.__version__
@@ -20,26 +24,49 @@ from scipy.ndimage import binary_opening, gaussian_filter1d as gauss_filter
 
 
 
-class HierarchicalBayesModel:
+class HierarchicalBayesModel(HierarchicalModel):
 
   ### possible speedup through...
   ###   parallelization of code
 
-    def __init__(self, N, dwelltime, x_arr, hierarchical=False, logLevel=logging.ERROR):
+    def __init__(self, N, dwelltime, x_arr, f=1,hierarchical=[], wrap=[], logLevel=logging.ERROR):
         #self.N = gauss_filter(N,2,axis=1)
         self.N = N[np.newaxis,...]
         self.dwelltime = dwelltime[np.newaxis,...]
-        self.nTrials, self.nbin = N.shape
+        self.nSamples, self.nbin = N.shape
         self.x_arr = x_arr[np.newaxis,np.newaxis,:]
         self.x_max = x_arr.max()
         self.Nx = len(x_arr)
-        
-        self.hierarchical = hierarchical
-        
-        self.f = 1
 
+        self.hierarchical = hierarchical
+        self.wrap = wrap
+                
+        self.f = f
+
+        if f>=1:
+            self.set_priors(None,f,hierarchical,wrap)
+        else:
+            ## meaning: only noise model
+            halfnorm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(x)        
+            norm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(2*x - 1)
         
-        self.set_priors()
+            self.set_priors({
+                'A0': {
+                    'hierarchical': {
+                        'params':      {'loc':'mean', 'scale':'sigma'},
+                        'function':    norm_ppf,
+                    },
+                    'mean': {
+                        'params':       {'loc':0., 'scale':5},
+                        'function':     halfnorm_ppf,
+                    },
+                    'sigma': {
+                        'params':       {'loc':0., 'scale':2},
+                        'function':     halfnorm_ppf,
+                    },
+                }},
+                f,
+                hierarchical,wrap)
                 
         self.min_trials = 3
         
@@ -47,156 +74,136 @@ class HierarchicalBayesModel:
         self.log.setLevel(logLevel)
 
     
-    def set_priors(self):
+    def set_priors(self,priors_init=None,f=None,hierarchical=[],wrap=[]):
         
-        halfnorm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(x)
-        #halfnorm_ppf = sstats.halfnorm.ppf
-        
+        halfnorm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(x)        
         norm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(2*x - 1)
-        #norm_ppf = sstats.norm.ppf
+
+        self.f = f if f is not None else self.f
         
-        self.priors_init = {
-            'A0': {
-                'mean': {
-                    'params':       {'loc':0., 'scale':2},
-                    'function':     halfnorm_ppf,
-                    'wrap':         False,    
+        if priors_init is None:
+            self.priors_init = {
+                'A0': {
+                    'hierarchical': {
+                        'params':      {'loc':'mean', 'scale':'sigma'},
+                        'function':    norm_ppf,
+                    },
+                    'mean': {
+                        'params':       {'loc':0., 'scale':5},
+                        'function':     halfnorm_ppf,
+                    },
+                    'sigma': {
+                        'params':       {'loc':0., 'scale':2},
+                        'function':     halfnorm_ppf,
+                    },
                 },
-                'hierarchical': False,
-                # 'hierarchical': {
-                #     'n':           self.nTrials,
-                #     'params':      {'loc':0, 'scale':1},
-                #     'function':    norm_ppf,
-                # } 
-            },
-            'A': {
-                'mean': {
-                    'params':       {'loc':5, 'scale':5},
-                    'function':     halfnorm_ppf,
-                    'wrap':         False,    
-                },
-                'hierarchical': False,
-                # 'hierarchical': {
-                #     'n':            self.nTrials,
-                #     'params':       {'loc': 0, 'scale': 2},
-                #     'function':     norm_ppf,
-                # } 
-            },
-            
-            'sigma': {
-                'mean': {
-                    'params':       {'loc': 0.2, 'scale': 1},
-                    'function':     halfnorm_ppf,
-                    'wrap':         False,    
-                },
-                'hierarchical': False,
-                # 'hierarchical': {
-                #     'n':            self.nTrials,
-                #     'params':       {'loc':0, 'scale':1},
-                #     'function':    norm_ppf
-                # } 
-            },
-            'theta': {
-                'mean': {
-                    'params':       {'stretch': self.Nx},
-                    'function':     lambda x,stretch: x*stretch,
-                    'wrap':         True,    
-                },
-                'sigma': {
-                    'params':       {'loc': 0, 'scale': 1},
-                    'function':     halfnorm_ppf,
-                    'wrap':         False,    
-                },
-                # 'hierarchical': False,
-                'hierarchical': {
-                    'params':       {'loc': 'mean', 'scale': 'sigma'},
-                    'function':     norm_ppf,
-                    'wrap':         True,    
-                } 
-            },
-        }
-        
-        ## could create new array here...?
-        self.paraNames = []
-        self.priors = {}
-        self.pTC = {}
-        
-        
-        ct = 0
-        for key in self.priors_init:
-            for var in self.priors_init[key]:
-                paraName = f"{key}_{var}"
-                print(paraName)
-                
-                if not (var=='hierarchical'):
-                    self.priors[paraName] = {}
-                    
-                    self.paraNames.append(paraName)
-                    self.priors[paraName]['idx'] = ct
-                    self.priors[paraName]['n'] = 1
-                    self.priors[paraName]['meta'] = isinstance(self.priors_init[key]['hierarchical'],dict) and self.hierarchical
-                    ct += 1
+            }
 
-                    self.priors[paraName]['transform'] = \
-                        lambda x,params=self.priors_init[key][var]['params'],fun=self.priors_init[key][var]['function']: fun(x,**params)
-
-                    # if self.priors_init[key][var]['wrap']:
-                        # self.pTC['wrap'][self.priors[paraName]['idx']] = True
-
-
-                elif (var=='hierarchical') and self.hierarchical and self.priors_init[key]['hierarchical']:
-                    self.priors[paraName] = {}
-                    self.priors[paraName]['idx'] = ct
-                    self.priors[paraName]['idx_mean'] = self.priors[f"{key}_{self.priors_init[key]['hierarchical']['params']['loc']}"]['idx']
-                    self.priors[paraName]['idx_sigma'] = self.priors[f"{key}_{self.priors_init[key]['hierarchical']['params']['scale']}"]['idx']
-                    self.priors[paraName]['n'] = self.nTrials
-                    self.priors[paraName]['meta'] = False
-                    for i in range(self.nTrials):
-                        self.paraNames.append(f'{key}_{i}')
-
-                        # if self.priors_init[key][var]['wrap']:
-                            # self.pTC['wrap'][self.priors[paraName]['idx']+i] = True
-                    ct += self.nTrials
-                
-                    self.priors[paraName]['transform'] = \
-                        lambda x,params,fun=self.priors_init[key][var]['function']: fun(x,**params)
-        
-        self.nPars = len(self.paraNames)
-        self.pTC['wrap'] = np.zeros(self.nPars).astype('bool')
-        for key in self.priors:
-            print(key)
-            key_root, key_var = key.split('_')
-            if 'hierarchical' in self.priors_init[key_root]:
-                self.pTC['wrap'][self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] = self.priors_init[key_root][key_var]['wrap']
-        
-
-    def transform_p(self,p_in,vectorized=True):
-        
-        if len(p_in.shape)==1:
-            p_in = p_in[np.newaxis,...]
-        p_out = np.zeros_like(p_in)
-        
-        for key in self.priors:
-            
-            if self.priors[key]['n']==1:
-            
-                p_out[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] = self.priors[key]['transform'](p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']])
-
-            else:
-                params = {
-                    'loc':          p_out[:,self.priors[key]['idx_mean'],np.newaxis],
-                    'scale':        p_out[:,self.priors[key]['idx_sigma'],np.newaxis],
-                    # 'loc':          0,
-                    # 'scale':        1,
-                }
-                p_out[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] = self.priors[key]['transform'](p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']],params=params)
-        
-        if vectorized:
-            return p_out
+            for f in range(1,self.f+1):
+                self.priors_init[f'PF{f}_A'] = {
+                        # maybe get rid of this parameter and just choose the best fitting height for each trial?!
+                        # enable 2 mode fitting... (maybe just find best fit for location +/- 2sigma, instead of for whole trace?)
+                        'hierarchical': {
+                            'params':       {'loc':'mean', 'scale':'sigma'},
+                            'function':     norm_ppf,
+                        },
+                        'mean': {
+                            'params':       {'loc':0, 'scale':50},
+                            'function':     halfnorm_ppf,
+                        },
+                        'sigma': {
+                            'params':       {'loc':0., 'scale':5},
+                            'function':     halfnorm_ppf,
+                        },
+                    }
+                self.priors_init[f'PF{f}_sigma'] = {
+                        'hierarchical': {
+                            'params':       {'loc':'mean', 'scale':'sigma'},
+                            'function':     norm_ppf
+                        },
+                        'mean': {
+                            'params':       {'loc': 0.5, 'scale': 2},
+                            'function':     halfnorm_ppf,
+                        },
+                        'sigma': {
+                            'params':       {'loc':0., 'scale':2.},
+                            'function':     halfnorm_ppf,
+                        },
+                    }
+                self.priors_init[f'PF{f}_theta'] = {
+                        'hierarchical': {
+                            'params':       {'loc':'mean', 'scale':'sigma'},
+                            'function':     norm_ppf,
+                        },
+                        'mean': {
+                            'params':       {'stretch': self.Nx},
+                            'function':     lambda x,stretch: x*stretch,
+                        },
+                        'sigma': {
+                            'params':       {'loc': 0, 'scale': 3},
+                            'function':     halfnorm_ppf,
+                        },
+                    }
+                # self.priors_init[f'PF{f}_p'] = {
+                #     'hierarchical': {
+                #             'params':       {'loc':'mean', 'scale':'sigma'},
+                #             # 'function':     norm_ppf,
+                #             'function':     lambda x,loc,scale: x*2-1,
+                #         },
+                #         'mean': {
+                #             'params':       {'stretch': 2.},
+                #             'function':     lambda x,stretch: x*stretch-stretch/2.,
+                #         },
+                #         'sigma': {
+                #             'params':       {'loc': 0, 'scale': 0.5},
+                #             'function':     halfnorm_ppf,
+                #         },
+                # }
         else:
-            return p_out[0,:]
+            self.priors_init = priors_init
+        super().set_priors(self.priors_init,hierarchical,wrap)
 
+    
+    def tuning_curve(self,params, fields: int | None = None):
+
+        ## build tuning-curve model
+        mean_model_field = np.ones((1,self.nSamples,self.Nx))*params['A0']
+
+        shift = self.x_max/2
+        fields = params['PF'] if fields is None else [params['PF'][fields]]
+        for field in fields: 
+            mean_model_field += field['A']*np.exp(
+                -(np.mod(self.x_arr - field['theta'] + shift,self.x_max)-shift)**2/(2*field['sigma']**2)
+            )
+        return mean_model_field
+    
+
+    def from_p_to_params(self,p_in):
+
+        '''
+            transform p_in to parameters for the model
+        '''
+        params = {}
+
+        if self.f>0:
+            params['PF'] = []
+            for _ in range(self.f):
+                params['PF'].append({})
         
+        for key in self.priors:
+            if self.priors[key]['meta']: continue
+
+            if key.startswith('PF'):
+                nField,key_param = key.split('_')
+                nField = int(nField[2:])-1
+                params['PF'][nField][key_param] = p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n'],np.newaxis]
+            else:
+                key_param = key.split('__')[0]
+                params[key_param] = p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n'],np.newaxis]
+            
+        return params
+
+
     def set_logl_func(self,vectorized=True):
 
         '''
@@ -214,7 +221,7 @@ class HierarchicalBayesModel:
                     (thus, running inference only once on complete session, with N*4 parameters)
         '''
         
-        self.fields = np.zeros(self.nTrials)
+        self.fields = np.zeros((self.f,self.nSamples))
         def get_logl(p_in,plt_bool=False):
             
             if len(p_in.shape)==1:
@@ -222,123 +229,159 @@ class HierarchicalBayesModel:
             N_in = p_in.shape[0]
             
             ## get proper parameters from p_in
-            params = {}
+
+            params = self.from_p_to_params(p_in)
             dParams_trial_from_total = {}
-            # dParams_trial_from_total = np.zeros((N_in,self.nTrials))
+            if self.f>0:
+                dParams_trial_from_total['PF'] = [{}]*self.f
+            
             for key in self.priors:
                 
-                key_param = key.split('_')[0]
-                if self.priors[key]['meta']: continue
-                # print('continue from here....')
-
-
-                params[key_param] = p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n'],np.newaxis]
-
-
-                # mean_key = self.priors_init[root_var]['hierarchical']['params']['loc']
-                # idx_mean = np.full((1,1) if vectorized else 1,
-                #     self.priors[mean_key]['idx'])
-                # if self.priors[key]['n']==1:
-
                 if self.priors[key]['n']>1:
 
-                    # params[key_param] = p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n'],np.newaxis] + p_in[:,[self.priors[key]['idx_mean']],np.newaxis]
+                    if key.endswith('_p'): continue
                     
-                    dParams_trial_from_total[key] = (p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] - p_in[:,[self.priors[key]['idx_mean']]])/p_in[:,[self.priors[key]['idx_sigma']]]
-                    # dParams_trial_from_total[key] = p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']]
+                    if key.startswith('PF'):
+                        dParams_trial_from_total['PF'][int(key[2])-1][key.split('_')[1]] = (p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] - p_in[:,[self.priors[key]['idx_mean']]])/p_in[:,[self.priors[key]['idx_sigma']]]
+                    else:
+                        dParams_trial_from_total[key] = (p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] - p_in[:,[self.priors[key]['idx_mean']]])/p_in[:,[self.priors[key]['idx_sigma']]]
                 
-
-                # dParams_trial_from_total += ((p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']]-self.priors[key]['hierarchical']['params']['loc'])/self.priors[key]['hierarchical']['params']['scale'])#**2
- 
-                if self.pTC['wrap'][self.priors[key]['idx']]:
-                # key=='theta':
-                    params[key_param] = np.mod(params[key_param],self.Nx)   ## wrap value shouldnt be hardcoded, but provided in setp_priors
-                    # self.log.debug(('p_in:',p_in[:,self.priors[key]['idx']+1:self.priors[key]['idx']+1+self.nTrials]))
-
-                # if self.priors[key]['hierarchical']:
-                #     ## hierarchical parameters are computed from base value plus trial-dependent values
-                #     params[key] = p_in[:,self.priors[key]['idx'],np.newaxis] + \
-                #        p_in[:,self.priors[key]['idx']+1:self.priors[key]['idx']+1+self.nTrials]
-                    
-                #     ## theta is wrapped (circular environment)
-                #     if key=='theta':
-                #         params[key] = np.mod(params[key],self.Nx)
-                #         self.log.debug(('p_in:',p_in[:,self.priors[key]['idx']+1:self.priors[key]['idx']+1+self.nTrials]))
-
-                #     ## compute SD-deviations from base value
-                #     ## this should be summed up separately for each parameter, to enable centering penalty
-                #     dParams_trial_from_total += ((p_in[:,self.priors[key]['idx']+1:self.priors[key]['idx']+1+self.nTrials]-self.priors[key]['hierarchical']['params']['loc'])/self.priors[key]['hierarchical']['params']['scale'])#**2
-                # else:
-                    # params[key] = p_in[:,self.priors[key]['idx'],np.newaxis]
-                
-                # params[key_param] = params[key_param][...,np.newaxis]
-                self.log.debug((f'{key_param}:',np.squeeze(params[key_param])))
-                self.log.debug((f'{key_param}:',params[key_param].shape))
+                # self.log.debug((f'{key_param}:',np.squeeze(params[key_param])))
+                # self.log.debug((f'{key_param}:',params[key_param].shape))
             
-            
+            # print(dParams_trial_from_total)
             self.log.debug(('dParams:',dParams_trial_from_total))
             
-            ## build tuning-curve model
-            mean_model_nofield = np.ones((1,self.nTrials,self.Nx))*params['A0']
-            mean_model_field = np.ones((1,self.nTrials,self.Nx))*params['A0']
-            if N_in > 1:
-                for j in [-1,0,1]:
-                    mean_model_field += \
-                        (params['A']*np.exp(
-                                -(self.x_arr - params['theta'] + self.x_max*j)**2/(2*params['sigma']**2)
-                            )
-                        )
-            
-            ## get probability to observe N spikes (amplitude) within dwelltime for each bin in each trial
-            logp_nofield_at_position = poisson_spikes_log(mean_model_nofield,self.N,self.dwelltime)
-            logp_field_at_position = poisson_spikes_log(mean_model_field,self.N,self.dwelltime)
-            ## fix 0-entries in probabilities (should maybe be done)
-            logp_nofield_at_position[np.isnan(logp_nofield_at_position)] = -1
-            logp_field_at_position[np.isnan(logp_field_at_position)] = -1
-            
-            logp_trials = np.zeros((2,N_in,self.nTrials))
-            logp_trials[0,...] = np.nansum(logp_nofield_at_position,axis=2)
-            logp_trials[1,...] = np.nansum(logp_field_at_position,axis=2)
-
-            # consider trials to be place-coding, when bayesian information criterion (BIC) 
-            # is lower than nofield-model. Number of parameters for each trial is 1 vs 4, 
-            # as trial dependent parameters only affect a single trial, each
-            BIC_nofield = 1 * np.log(self.Nx) - 2 * logp_trials[0,...]
-            BIC_field = 4 * np.log(self.Nx) - 2 * logp_trials[1,...]
-            
-            field_in_trial = BIC_field < BIC_nofield
-            self.log.debug(("field in trial",field_in_trial,field_in_trial.shape))
-            
-            ## for all non-field-trials, introduce "pull" towards 0 for all parameters to avoid flat posterior
-            zeroing_penalty = np.zeros(N_in)
-            centering_penalty = np.zeros(N_in)
-            for key in self.priors:
-                if self.priors[key]['n']>1:
-                    zeroing_penalty += ((dParams_trial_from_total[key]*(~field_in_trial))**2).sum(axis=1)
-                    centering_penalty += ((dParams_trial_from_total[key]*field_in_trial).sum(axis=1))**2
-            # zeroing_penalty = 10*(dParams_trial_from_total**2).sum(axis=1)        
-            self.log.debug(('penalty (zeroing):',zeroing_penalty))
-            self.log.debug(('penalty (centering):',centering_penalty))
-            
-            # print('zeroing: ',zeroing_penalty.mean(),', centering: ',centering_penalty.mean())
-            self.fields += field_in_trial.sum(axis=0)
-            
-            
-            # self.log.debug(~field_in_trial)
-            
-            # only consider the cell to be place coding, if at least min_trials are place-coding
             logp = np.zeros(N_in)
-            for i in range(N_in):
-                self.log.debug((f'logp trials {i}:',logp_trials[0,i,:]))#
-                if field_in_trial[i,:].sum()>=self.min_trials:
-                                
-                    logp[i] = logp_trials[0,i,~field_in_trial[i,:]].sum()
-                    logp[i] += logp_trials[1,i,field_in_trial[i,:]].sum()
-                else:
-                    logp[i] = logp_trials[0,i,:].sum()
-                logp[i] -= zeroing_penalty[i]
-                logp[i] -= centering_penalty[i]
-                self.log.debug((f'logp sum (with discount) {i}:',logp[i]))
+            
+            mean_model_nofield = np.ones((1,self.nSamples,self.Nx))*params['A0']
+            logp_nofield_at_position = poisson_spikes_log(mean_model_nofield,self.N,self.dwelltime)
+            logp_nofield_at_position[np.isnan(logp_nofield_at_position)] = -10
+            logp_nofield_trials = np.nansum(logp_nofield_at_position,axis=2)
+            BIC_nofield = 1 * np.log(self.Nx) - 2 * logp_nofield_trials
+                
+            if self.f>0:
+
+                # for each place field, identify whether it provides additional 
+                # explanation wrt the nofield model by calculating the BIC in each trial
+                # 
+                # finally, for each trial, calculate the log-likelihood of the overall
+                # model and - if placefields are combined, check whether it provides additional explanation
+
+                field_in_trial = np.zeros((self.f,N_in,self.nSamples),dtype=bool)
+                logp_field_trials = np.zeros((self.f,N_in,self.nSamples))
+
+                discount_factor = 10.  ## don't like the hard-coded value here - any better idea?
+                ## for all non-field-trials, introduce "pull" towards 0 for all parameters to avoid flat posterior
+                zeroing_penalty = np.zeros(N_in)
+                ### for all field-trials, enforce centering of parameters around meta parameter
+                centering_penalty = np.zeros(N_in)
+
+                ## iterate through each model
+                for f in range(self.f): # achtually don't need the "if" before
+
+                    mean_model_field = self.tuning_curve(params,f)
+                    
+                    ## get probability to observe N spikes (amplitude) within dwelltime for each bin in each trial
+                    logp_field_at_position = poisson_spikes_log(mean_model_field,self.N,self.dwelltime)
+
+                    ## fix 0-entries in probabilities (should maybe be done)
+                    logp_field_at_position[np.isnan(logp_field_at_position)] = -10
+                    
+                    ## calculate trial-wise log-likelihoods for both models
+                    logp_field_trials[f,...] = np.nansum(logp_field_at_position,axis=2)
+
+                    # consider trials to be place-coding, when bayesian information 
+                    # criterion (BIC) is lower than nofield-model. Number of parameters 
+                    # for each trial is 1 (no field) vs 4 (single field)
+                    BIC_field = 4 * np.log(self.Nx) - 2 * logp_field_trials[f,...]
+                    
+                    field_in_trial[f,...] = BIC_field < BIC_nofield
+
+                    # print('field in trial',field_in_trial.shape)
+                    # print(params)
+                    # for each trial, add |p_t|/sum(|p_t|) * nofield_trial if p_t < 0, else |p_t|/sum(|p_t|) * 
+                    
+
+                    # if 'PF1_p' in self.priors:
+                    #     field_in_trial = params['PF'][0]['p'][...,0] > 0
+                    # else:
+
+                    for key in dParams_trial_from_total['PF'][f]:
+                        # if self.priors[key]['n']>1:
+                            # if key.endswith('_p'): continue
+                            # print(key,dParams_trial_from_total[key].shape)
+                            # print(field_in_trial.shape)
+                        zeroing_penalty += discount_factor*((dParams_trial_from_total['PF'][f][key]*(~field_in_trial[f,...]))**2).sum(axis=1)
+                        centering_penalty += discount_factor*((dParams_trial_from_total['PF'][f][key]*field_in_trial[f,...]).sum(axis=1))**2
+
+                    self.log.debug(('penalty (zeroing):',zeroing_penalty))
+                    self.log.debug(('penalty (centering):',centering_penalty))
+                    # print(f,'zeroing penalty:',zeroing_penalty)
+                    # print(f,'centering penalty:',centering_penalty)
+                
+
+                ## calculate logp with all fields active
+                mean_model_fields = self.tuning_curve(params)    
+                logp_fields_at_position = poisson_spikes_log(mean_model_fields,self.N,self.dwelltime)
+                logp_fields_at_position[np.isnan(logp_fields_at_position)] = -10
+                logp_fields_trials = np.nansum(logp_fields_at_position,axis=2)
+
+                self.fields += field_in_trial.sum(axis=1)
+
+
+                '''
+                    idea is: estimate 'activation' parameter, which is the probability of a trial to be place-coding
+                    for each trial, calculate BIC for field and nofield model and calculate difference
+                    the 'activation*nTrial' trials with the highest (positive) difference are considered to be place-coding
+                '''
+
+                self.log.debug(("field in trial",field_in_trial,field_in_trial.shape))
+                
+                # only consider the cell to be place coding, if at least min_trials are place-coding
+                # if 'PF1_p' in self.priors:
+                #     p_tmp = np.abs(params['PF'][0]['p'][...,0])+0.5
+                #     p0_sum = p_tmp.sum(axis=-1)
+                for i in range(N_in):
+                    self.log.debug((f'logp trials {i}:',logp_nofield_trials[i,:]))
+
+                    # print('field in trial:')
+                    # print(field_in_trial[:,i,:])
+                    # if field_in_trial[i,:].sum()>=self.min_trials:
+                    
+                    # if 'PF1_p' in self.priors:
+                    #     logp[i] = (p_tmp[i,~field_in_trial[i,:]]/p0_sum[i] * logp_nofield_trials[i,~field_in_trial[i,:]]).sum()
+                    #     logp[i] += (p_tmp[i,field_in_trial[i,:]]/p0_sum[i] * logp_field_trials[i,field_in_trial[i,:]]).sum()
+                    # else:
+
+                    logp[i] = logp_nofield_trials[i,np.all(~field_in_trial[:,i,:],axis=0)].sum()
+                    # print('no field active:')
+                    # print(np.all(~field_in_trial[:,i,:],axis=0))
+
+                    fields_in_trial = np.all(field_in_trial[:,i,:],axis=0)
+                    # print('all fields active:')
+                    # print(fields_in_trial)
+                    # print(field_in_trial[:,i,:]) 
+                    logp[i] += logp_fields_trials[i,fields_in_trial].sum()
+
+
+                    for f in range(self.f):
+                        single_field_in_trial = field_in_trial[f,i,:] & ~fields_in_trial
+                        # print(f'single field ({f}):')
+                        # print(single_field_in_trial)
+                        logp[i] += logp_field_trials[f,i,single_field_in_trial].sum()
+
+                    # logp[i] = logp_nofield_trials[i,~field_in_trial[i,:]].sum()
+                    # logp[i] += logp_field_trials[i,field_in_trial[i,:]].sum()
+                    # else:
+                    #     logp[i] = logp_nofield_trials[i,:].sum()
+                    
+                    logp[i] -= zeroing_penalty[i]
+                    logp[i] -= centering_penalty[i]
+                    self.log.debug((f'logp sum (with discount) {i}:',logp[i]))
+            else:
+                logp = np.nansum(logp_nofield_at_position,axis=(1,2))
+                # logp[i] = logp_trials.sum(axis=1)
                 
             if plt_bool:
                 fig,ax = plt.subplots(3,N_in,figsize=(10,5))
@@ -375,10 +418,13 @@ class HierarchicalBayesModel:
 
 
 
-def call_HBM(pathSession='../data/556wt/Session12',neuron=0,hierarchical=True,run_it=False,use_dynesty=False,logLevel=logging.ERROR):
+def call_HBM(pathSession='../data/579ad/Session10',neuron=0,f=1,hierarchical=[],wrap=[],run_it=False,use_dynesty=False,logLevel=logging.ERROR):
 
     pathBehavior = os.path.join(pathSession,'aligned_behavior.pkl')
-    pathActivity = os.path.join(pathSession,'OnACID_results.hdf5')
+
+
+    pathActivity = [os.path.join(pathSession,file) for file in os.listdir(pathSession) if file.startswith('results_CaImAn')][0]
+    # pathActivity = os.path.join(pathSession,'OnACID_results.hdf5')
 
     ld = load_dict_from_hdf5(pathActivity)
     #S = gauss_filter(ld['S'][neuron,:],2)
@@ -393,6 +439,7 @@ def call_HBM(pathSession='../data/556wt/Session12',neuron=0,hierarchical=True,ru
     behavior = prepare_behavior(ld['time'],ld['position'],ld['reward_location'],nbin=nbin,f=15)
     activity = prepare_activity(S,behavior['active'],behavior['trials'],nbin=nbin)
 
+    #print((S>0).sum(),activity['S'].sum())
     plt.figure()
     plt.plot(activity['trial_map'].T)
     plt.show(block=False)
@@ -412,7 +459,6 @@ def call_HBM(pathSession='../data/556wt/Session12',neuron=0,hierarchical=True,ru
     # time.sleep(1)
     # return
 
-
     # #%matplotlib nbagg 
     # fig,ax = plt.subplots(1,2)
     # ax[0].plot(ld['time'],S)
@@ -420,12 +466,11 @@ def call_HBM(pathSession='../data/556wt/Session12',neuron=0,hierarchical=True,ru
     # ax[1].plot(activity['trial_map'].T)
     # plt.show(block=False)
 
-
-
     hbm = HierarchicalBayesModel(
         activity['trial_map'],
         behavior['trials']['dwelltime'],
         np.arange(nbin),
+        f=f,
         hierarchical=hierarchical,
         logLevel=logLevel
     )
@@ -433,94 +478,105 @@ def call_HBM(pathSession='../data/556wt/Session12',neuron=0,hierarchical=True,ru
     if not run_it:
         return hbm, None, None
 
-    my_prior_transform = hbm.transform_p
-    my_likelihood = hbm.set_logl_func()
 
     
     if use_dynesty:
-        my_prior_transform = lambda p_in : hbm.transform_p(p_in,vectorized=False)
+        # my_prior_transform = lambda p_in : hbm.transform_p(p_in,vectorized=False)
+        my_prior_transform = hbm.set_prior_transform(vectorized=False)
         my_likelihood = hbm.set_logl_func(vectorized=False)
         print('running nested sampling')
-        print(np.where(hbm.pTC['wrap'])[0])
+        # print(np.where(hbm.pTC['wrap'])[0])
         with dypool.Pool(8,my_likelihood,my_prior_transform) as pool:
-            sampler = DynamicNestedSampler(pool.loglike,pool.prior_transform,hbm.nPars,
+            sampler = NestedSampler(pool.loglike,pool.prior_transform,hbm.nParams,
                     pool=pool,
-                    periodic=np.where(hbm.pTC['wrap'])[0],
+                    nlive=100,
+                    bound='multi',
+                    # periodic=np.where(hbm.pTC['wrap'])[0],
                     sample='slice'
                 )
             sampler.run_nested()
 
         sampling_result = sampler.results
-        print(sampling_result)
+        # print(sampling_result)
         return hbm, sampling_result, sampler
     else:
-        my_prior_transform = hbm.transform_p
+        # print(hbm.wrap)
+        my_prior_transform = hbm.set_prior_transform(vectorized=True)
         my_likelihood = hbm.set_logl_func()
-        print(hbm.paraNames)
+
+        print(hbm.paramNames)
         sampler = ultranest.ReactiveNestedSampler(
-            hbm.paraNames, 
+            hbm.paramNames, 
             my_likelihood, my_prior_transform,
-            wrapped_params=hbm.pTC['wrap'],
+            wrapped_params=hbm.wrap,
             vectorized=True,num_bootstraps=20,
             ndraw_min=512
         )
 
+        sampler.stepsampler = PopulationSliceSampler(popsize=100,nsteps=10,
+                generate_direction=generate_region_oriented_direction)
 
         # sampler.stepsampler = ultranest.stepsampler.SliceSampler(
         #     nsteps=20,
         #     generate_direction=ultranest.stepsampler.generate_cube_oriented_direction,
         # )
-        num_samples = hbm.nPars*100
+        # sampler.stepsampler = ultranest.stepsampler.RegionSliceSampler(nsteps=hbm.nPars)#, adaptive_nsteps='move-distance')
+        # num_samples = hbm.nPars*100
+        num_samples = 100
 
         sampling_result = sampler.run(
             min_num_live_points=num_samples,
-            max_iters=20000,cluster_num_live_points=20,max_num_improvement_loops=3,
-            show_status=True,viz_callback='auto')  ## ... and run it #max_ncalls=500000,(f+1)*100,
+            max_iters=50000,cluster_num_live_points=20,max_num_improvement_loops=1,
+            # show_status=True,viz_callback='auto')  ## ... and run it #max_ncalls=500000,(f+1)*100,
+            show_status=True,viz_callback=False)  ## ... and run it #max_ncalls=500000,(f+1)*100,
             #region_class=ultranest.mlfriends.SimpleRegion(),
 
         return hbm, sampling_result, sampler
 
-    # sampler.stepsampler = ultranest.stepsampler.RegionSliceSampler(nsteps=hbm.nPars)#, adaptive_nsteps='move-distance')
+
+def analyze_results(BM,results,sampler):
+
+    params = BM.from_p_to_params(np.array(results['posterior']['mean'])[np.newaxis,:])
+    # print(params)
+    # print(params['PF'][0]['p'].shape)
+    fig = plt.figure(figsize=(12,8))
+    for trial in range(BM.nSamples):
+        ax = fig.add_subplot(5,5,trial+1)
+        ax.plot(BM.N[0,trial,:]/BM.dwelltime[0,trial,:],'k')
+
+        lw = np.abs(params['PF'][0]['p'][0,trial,0])*2 if 'PF1_p' in BM.priors else 1
+        # isfield = params['PF'][0]['p'][0,trial,0] > 0 if 'PF1_p' in BM.priors else BM.fields[trial] > BM.fields.max()/2.
+
+        isfield_none = np.all(~(BM.fields[:,trial] > BM.fields.max()/2.),axis=0)
+        isfield_all = np.all(BM.fields[:,trial] > BM.fields.max()/2.,axis=0)
+
+        
+        if isfield_none:
+            ax.plot(BM.x_arr[0,0,:],np.ones(BM.Nx)*params['A0'][0,0,:],'r--',linewidth=lw)
+        if isfield_all:
+            ax.plot(BM.x_arr[0,0,:],BM.tuning_curve(params)[0,trial,:],'r--',linewidth=lw)
+        
+        for f in range(BM.f):
+            isfield_single = BM.fields[f,trial] > BM.fields.max()/2. and ~isfield_all
+            if isfield_single:
+                ax.plot(BM.x_arr[0,0,:],BM.tuning_curve(params,f)[0,trial,:],'r--',linewidth=lw)
+
+
+        #     # ax.plot(results['samples'][key][:,trial],'r',alpha=0.5)
+        # if isfield:
+        #     ax.plot(BM.x_arr[0,0,:],BM.tuning_curve(params)[0,trial,:],'r--',linewidth=lw)
+        # else:
+        #     ax.plot(BM.x_arr[0,0,:],np.ones(BM.Nx)*params['A0'][0,0,:],'r--',linewidth=lw)
+        ax.set_ylim([0,200])
     
-    return sampling_result, sampler
+    plt.show(block=False)
 
 
 
-def tuning_curve(x_arr,p):
-
-    """
-        defines the model by providing the average expected firing rate at each bin
-    """
-    x_max = x_arr.shape[0]
-
-    if len(p.shape)==1:
-        p = p[np.newaxis,:]
-    p = p[...,np.newaxis,np.newaxis]   ## adding 2 axes for 1. number of trials, 2. number of bins
-    
-    mean_model_nofield = np.ones((p.shape[0],x_max))*p[:,0,:,0]
-    mean_model_field = np.ones((p.shape[0],p.shape[1]-4,x_max))*p[:,0,...]
-    if p.shape[1] > 1:
-        for j in [-1,0,1]:
-            mean_model_field += \
-                (p[:,1,...]*np.exp(
-                        -(x_arr[np.newaxis,np.newaxis,:] - p[:,3,...] - p[:,4:,:,0] + x_max*j)**2/(2*p[:,2,...]**2)
-                    )
-                )
-
-    return mean_model_nofield, mean_model_field
 
 def poisson_spikes(nu,N,T_total):
     return np.exp(N*np.log(nu*T_total) - np.log(sp_factorial(N)) - nu*T_total)
 
 def poisson_spikes_log(nu,N,T_total):
-    # if nu==0:
-    #     return -np.inf
-    # nu[nu<=0] = 1e-5
-    # print(T_total)
-    # T_total[T_total==0] = 0.01
     
     return N*np.log(nu*T_total) - np.log(sp_factorial(N)) - nu*T_total
-
-
-
-# hbm,sampler = call_HBM('../data/556wt/Session12',neuron=2,logLevel=logging.ERROR)

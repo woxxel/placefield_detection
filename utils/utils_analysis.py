@@ -45,12 +45,12 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
     # key_S = 'spikes' if self.para['modes']['activity']=='spikes' else 'S'
 
     activity = {}
-    activity['S'] = S[bh_active]
+    # activity['S'] = S[bh_active]
 
     ### calculate firing rate
     activity['firing_rate'], _, activity['S'] = get_firingrate(S,f=f,sd_r=-1,Ns_thr=1,prctile=20)  
 
-    S_active = gauss_filter(activity['S'],1)[bh_active]
+    S_active = gauss_filter(activity['S'],2)[bh_active]
     # activity['S'] = activity[key_S]
     
     # ## obtain quantized firing rate for MI calculation
@@ -65,7 +65,6 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
     ## obtain trial-specific activity
     activity['trials'] = {}
     activity['trial_map'] = np.zeros((bh_trials['ct'],nbin))    ## preallocate
-
     
     for t in range(bh_trials['ct']):
         activity['trials'][t] = {}

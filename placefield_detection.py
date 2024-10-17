@@ -132,6 +132,11 @@ class placefield_detection:
         #     idx_process = assignment
         #     print(idx_process)
         # else:
+
+        if pf_detection=='threshold':
+            pf_method = threshold
+        elif pf_detection=='bayesian':
+            pf_method = bayesian
         
         idx_process = np.arange(self.nCells)
         nCells_process = len(idx_process)
