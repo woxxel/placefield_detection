@@ -398,8 +398,8 @@ def get_firingrate(S,f=15,sd_r=1,Ns_thr=1,prctile=50):
             noise=0
         # either use provided sd_r, or calculate multiples of variance to ensure 
         # p-value of 10% (including correction for multiple comparisons)
-        sd_r = sstats.norm.ppf((1-0.1)**(1/Ns)) if (sd_r==-1) else sd_r
-        print(sd_r)
+        sd_r = sstats.norm.ppf((1-0.01)**(1/Ns)) if (sd_r==-1) else sd_r
+        # print(sd_r,noise)
         firing_threshold_adapt = baseline + sd_r*noise
         # print(firing_threshold_adapt)
         # number of spikes in each bin is the value multiple above calculated threshold

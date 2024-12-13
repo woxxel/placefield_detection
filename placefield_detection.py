@@ -8,13 +8,13 @@ import numpy as np
 
 import logging
 
-from .utils import calculate_hsm, get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior_from_file, prepare_activity, get_firingstats_from_trials, get_spikeNr
-from .utils.utils_analysis import prepare_quantiles
+from utils import get_reliability, get_firingrate, detection_parameters, build_struct_PC_results, prepare_behavior_from_file, prepare_activity, get_firingstats_from_trials
+from utils.utils_analysis import prepare_quantiles
 
-from scipy.ndimage import gaussian_filter1d as gauss_filter
+# from scipy.ndimage import gaussian_filter1d as gauss_filter
 
-from .placefield_detection_inference import *
-from .unbiased_MI.estimate_unbiased_information import estimate_unbiased_information
+from placefield_detection_inference import *
+from unbiased_MI.estimate_unbiased_information import estimate_unbiased_information
 
 warnings.filterwarnings("ignore")
 

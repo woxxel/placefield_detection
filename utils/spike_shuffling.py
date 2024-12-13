@@ -35,11 +35,12 @@ import numpy as np
 #from numba import jit
 
 #@jit
-def shuffling(mode,shuffle_peaks,**varin):
+def shuffling(mode,shuffle_peaks,**kwargs):
   
   if mode == 'shift':
     
-    [new_spike_train,tmp] = shift_spikes(varin['spike_train'])
+    break_points = kwargs['break_points'] if 'break_points' in kwargs else None
+    [new_spike_train,tmp] = shift_spikes(kwargs['spike_train'],break_points)
     if shuffle_peaks:
       spike_times = np.where(new_spike_train)[0]
       spikes = new_spike_train[spike_times]
@@ -48,22 +49,22 @@ def shuffling(mode,shuffle_peaks,**varin):
   elif mode == 'dither':
     
     assert len(args)>=2, "You did not provide enough input. Please check the function description for further information."
-    [spike_times,spikes,T,ISI,w] = get_input_dither(varin);
+    [spike_times,spikes,T,ISI,w] = get_input_dither(kwargs)
     
-    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks);
+    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks)
     
   elif mode == 'dithershift':
     
     assert len(args)>=4, "You did not provide enough input. Please check the function description for further information."
-    [spike_times,spikes,T,ISI,w] = get_input_dither(varin);
+    [spike_times,spikes,T,ISI,w] = get_input_dither(kwargs)
     
-    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks);
-    [new_spike_train,shift] = shift_spikes(new_spike_train);
+    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks)
+    [new_spike_train,shift] = shift_spikes(new_spike_train)
     
   elif mode == 'dsr':
   
     print('not yet implemented')
-    new_spike_train = np.NaN;
+    new_spike_train = np.NaN
     
   
   #plt = false;
@@ -95,11 +96,17 @@ def shuffling(mode,shuffle_peaks,**varin):
 
 
 
-def shift_spikes(spike_train):
+def shift_spikes(spike_train,break_points=None):
   
-  shift = np.random.randint(np.max([1,len(spike_train)]))
-  new_spike_train = np.concatenate([spike_train[shift:],spike_train[:shift]])    ## shift spike train
-  return new_spike_train,shift
+  if not (break_points is None):
+    shuffled_spike_train = np.hstack([shift_spikes(spike_train[start:end])[0] for start,end in zip(break_points[:-1],break_points[1:])])
+    shift = None
+  else:
+    shuffled_spike_train = spike_train.copy()
+
+  shift = np.random.randint(np.max([1,len(shuffled_spike_train)]))
+  shuffled_spike_train = np.concatenate([shuffled_spike_train[shift:],shuffled_spike_train[:shift]])    ## shift spike train - actually faster than roll
+  return shuffled_spike_train,shift
 
 
 def get_input_dither(argin):

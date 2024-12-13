@@ -17,6 +17,8 @@ import matplotlib.pyplot as plt
 from .utils import gauss_smooth, get_firingmap, get_firingrate, calculate_hsm
 
 
+
+
 def prepare_quantiles(C,bh_active,f=15.,qtl_steps=4):
 
     activity = {}
@@ -40,7 +42,7 @@ def prepare_quantiles(C,bh_active,f=15.,qtl_steps=4):
     return activity['qtl']
 
 
-def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_steps=4):
+def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_steps=4,use_thresholded=False):
 
     # key_S = 'spikes' if self.para['modes']['activity']=='spikes' else 'S'
 
@@ -48,11 +50,15 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
     # activity['S'] = S[bh_active]
 
     ### calculate firing rate
-    activity['firing_rate'], _, activity['S'] = get_firingrate(S,f=f,sd_r=-1,Ns_thr=1,prctile=20)  
+    activity['firing_rate'], _, S_thr = get_firingrate(S,f=f,sd_r=-1,Ns_thr=1,prctile=20)  
 
-    S_active = gauss_filter(activity['S'],2)[bh_active]
-    # activity['S'] = activity[key_S]
+    # if :
+    activity['S'] = S_thr if use_thresholded else S
+    # S_active = gauss_filter(activity['S'],1)[bh_active]
+    S_active = activity['S'][bh_active]
     
+    # activity['S'] = activity[key_S]
+    # S_active = S.copy()
     # ## obtain quantized firing rate for MI calculation
     # if calc_MI == 'MI' and firing_rate>0:
     #     sigma = 5
@@ -65,6 +71,7 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
     ## obtain trial-specific activity
     activity['trials'] = {}
     activity['trial_map'] = np.zeros((bh_trials['ct'],nbin))    ## preallocate
+    activity['spike_map'] = np.zeros((bh_trials['ct'],nbin))    ## preallocate
     
     for t in range(bh_trials['ct']):
         activity['trials'][t] = {}
@@ -88,6 +95,11 @@ def prepare_activity(S,bh_active,bh_trials,nbin=100,f=15.,calc_MI=False,qtl_step
                 bh_trials['dwelltime'][t,:],
                 nbin
             )#/activity['trials'][t]['rate']
+            activity['spike_map'][t,:] = get_firingmap(
+                activity['trials'][t]['S'],
+                bh_trials['binpos'][t],
+                nbin=nbin
+            )
     return activity
 
 

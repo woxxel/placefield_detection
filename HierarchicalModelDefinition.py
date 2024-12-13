@@ -1,4 +1,5 @@
 import numpy as np
+import inspect
 
 class HierarchicalModel:
     """
@@ -43,22 +44,29 @@ class HierarchicalModel:
         """
 
 
+        self.priors_init = priors_init      ## required later
+
         self.paramNames = []
         self.priors = {}
         
         ct = 0
         for param in priors_init:
+            # print(param)
 
             if param in hierarchical:
                 
-                ## add the mean and sigma parameters for the hierarchical prior
-                for key in priors_init[param]['hierarchical']['params'].values():
-                    
-                    self.set_prior_param(priors_init, ct, param, key, hierarchical=True,meta=True)
-                    ct += 1
+                if priors_init[param]['hierarchical']:
+                    ## add the mean and sigma parameters for the hierarchical prior
+                    for key in priors_init[param]['hierarchical']['params'].values():
+                        
+                        self.set_prior_param(priors_init, ct, param, key, hierarchical=True,meta=True)
+                        ct += 1
 
-                ## then, add the actual parameters for the hierarchical prior
-                self.set_prior_param(priors_init, ct, param, hierarchical=True, meta=False)
+                    ## then, add the actual parameters for the hierarchical prior
+                    self.set_prior_param(priors_init, ct, param, hierarchical=True, meta=False)
+                else:
+                    self.set_prior_param(priors_init, ct, param, hierarchical=True, meta=False)
+
                 ct += self.nSamples
             
             else:
@@ -69,17 +77,23 @@ class HierarchicalModel:
         self.nParams = len(self.paramNames)
 
         self.wrap = np.zeros(self.nParams).astype('bool')
+        # print(wrap)
+        # print(priors_init.keys())
         for paramName in self.paramNames:
             try:
                 key_root, key_var = paramName.split('__')
             except:
                 key_root = paramName
                 key_var = None
-            
-            if priors_init[key_root] in wrap and not key_var=='sigma':
-                self.wrap[self.priors[key]['idx']:self.priors[paramName]['idx']+self.priors[paramName]['n']] = True
+            # try:
+            # key_root = key_root.split('_')[-1]
+            # print(key_root,paramName)
+            if key_root in wrap and not key_var=='sigma' and not key_var.isdigit():
+                # print(f'wrap found: {paramName}')
+                # print(self.priors[paramName]['idx'],self.priors[paramName]['n'])
+                self.wrap[self.priors[paramName]['idx']:self.priors[paramName]['idx']+self.priors[paramName]['n']] = True
         
-        self.wrap = np.zeros(self.nParams).astype('bool')
+        # self.wrap = np.zeros(self.nParams).astype('bool')
 
     
 
@@ -101,13 +115,23 @@ class HierarchicalModel:
             for i in range(self.nSamples):
                 self.paramNames.append(f'{param}__{i}')
 
-            # get indexes of hierarchical parameters for quick access later on
-            self.priors[paramName]['idx_mean'] = self.priors[f"{param}__{priors_init[param]['hierarchical']['params']['loc']}"]['idx']
-            self.priors[paramName]['idx_sigma'] = self.priors[f"{param}__{priors_init[param]['hierarchical']['params']['scale']}"]['idx']
-
-
-            self.priors[paramName]['transform'] = \
-                lambda x,params,fun=priors_init[param]['hierarchical']['function']: fun(x,**params)
+            if self.priors_init[param]['hierarchical']:
+                # get indexes of hierarchical parameters for quick access later on
+                for key, val in self.priors_init[param]['hierarchical']['params'].items():
+                    self.priors[paramName][f'idx_{val}'] = self.priors[f"{param}__{priors_init[param]['hierarchical']['params'][key]}"]['idx']
+                    # self.priors[paramName]['idx_mean'] = self.priors[f"{param}__{priors_init[param]['hierarchical']['params']['loc']}"]['idx']
+                    # self.priors[paramName]['idx_sigma'] = self.priors[f"{param}__{priors_init[param]['hierarchical']['params']['scale']}"]['idx']
+                # self.priors[paramName]['idx'] = 
+                self.priors[paramName]['transform'] = \
+                    lambda x,params,fun=priors_init[param]['hierarchical']['function']: fun(x,**params)
+            else:
+            #     ### if the parameter has no provided hierarchical parameters, it follows the same distribution for all values
+                self.priors[paramName]['transform'] = \
+                    lambda x,params=priors_init[param][var]['params'],fun=priors_init[param][var]['function']: fun(x,**params)
+                # self.priors[paramName]['transform'] = lambda x,params,fun=priors_init[param]['hierarchical']['function']: fun(x,**params)
+                # \
+                    # lambda x,params,fun=priors_init[param]['hierarchical']['function']: fun(x,**params)
+                
         else:
             self.paramNames.append(paramName)
         
@@ -142,13 +166,19 @@ class HierarchicalModel:
                     p_out[:,self.priors[key]['idx']] = self.priors[key]['transform'](p_in[:,self.priors[key]['idx']])
 
                 else:
-                    params = {
-                        'loc':      p_out[:,self.priors[key]['idx_mean'],np.newaxis],
-                        'scale':    p_out[:,self.priors[key]['idx_sigma'],np.newaxis],
-                    }
+                    try:
+                        key_root, key_var = key.split('__')
+                    except:
+                        key_root = key
+                        key_var = None
+                    
+                    params = {}
+                    if self.priors_init[key_root]['hierarchical']:
 
+                        for key_param, val in self.priors_init[key_root]['hierarchical']['params'].items():
+                            params[key_param] = p_out[:,self.priors[key][f"idx_{val}"],np.newaxis]
                     p_out[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']] = self.priors[key]['transform'](p_in[:,self.priors[key]['idx']:self.priors[key]['idx']+self.priors[key]['n']],params=params)
-            
+
             if vectorized:
                 return p_out
             else:
