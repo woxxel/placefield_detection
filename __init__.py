@@ -1,2 +1,7 @@
-# from .placefield_detection import *
-# from .utils.utils_data import detection_parameters as detection_params
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+print(str(Path(__file__).resolve().parent))
+
+from .process_session import *
