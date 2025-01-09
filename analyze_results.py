@@ -37,6 +37,7 @@ def build_inference_results_structure(
         )
 
     results["fields"] = {
+        "n_modes": np.zeros(n_cells, dtype=int),
         "parameter": {
             ## for each parameter
             "global": {},  ## n x N_f x 3
@@ -52,7 +53,6 @@ def build_inference_results_structure(
         "active_trials": np.zeros((n_cells, N_f, n_trials)),
         ## need to be calculated extra
         "reliability": np.full((n_cells, N_f), np.NaN),
-        "n_modes": np.zeros(n_cells, dtype=int),
     }
 
     ## define ranges for each parameter
@@ -188,7 +188,7 @@ def display_results(
                 )
                 if dTheta <= 5.0:
                     # print("match!", dTheta, theta, field["theta"])
-                    field_match[f] = f_truth
+                    field_match[f_truth] = f
 
     if not (groundtruth_activation is None):
         trial_activation__true_positive = np.zeros((groundtruth_N_f, n_trials), "bool")
@@ -198,6 +198,9 @@ def display_results(
         for f in range(groundtruth_N_f):
             if field_match[f] >= 0:
                 active_trials = results["fields"]["active_trials"][f, :] > 0.5
+                print(f"{active_trials=}")
+                print(f"groundtruth={groundtruth_activation[field_match[f], :]}")
+
                 trial_activation__true_positive[f, :] = (
                     groundtruth_activation[field_match[f], :] & active_trials
                 )
@@ -210,7 +213,7 @@ def display_results(
                 trial_activation__false_negative[f, :] = (
                     groundtruth_activation[field_match[f], :] & ~active_trials
                 )
-
+        print(f"{trial_activation__false_negative=}")
         sensitivity = trial_activation__true_positive.sum(axis=1) / (
             trial_activation__true_positive.sum(axis=1)
             + trial_activation__false_negative.sum(axis=1)
@@ -300,7 +303,10 @@ def display_results(
                 )[0]
                 ax_activation.scatter(
                     idx_false_negatives,
-                    theta_local[idx_false_negatives, 0],
+                    np.full(
+                        len(idx_false_negatives),
+                        results["fields"]["parameter"]["global"]["theta"][f, 0],
+                    ),
                     marker="o",
                     c="tab:orange",
                     s=60,
@@ -354,7 +360,11 @@ def display_results(
             )
 
     ax_activation.legend()
-    plt.setp(ax_activation, ylim=[0 - 5, nbin + 5])
+    plt.setp(
+        ax_activation,
+        xlim=[-1, groundtruth_activation.shape[1]],
+        ylim=[0 - 5, nbin + 5],
+    )
     plt.setp(ax_theta, xlim=[0, nbin])
     plt.setp(ax_theta_inactive, xlim=[0, nbin])
 

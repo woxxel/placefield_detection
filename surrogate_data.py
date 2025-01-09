@@ -13,19 +13,25 @@
 ##      length      - length of the track
 ##      nbin        - number of bins
 
+import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 import random, time, tqdm
 import multiprocessing as mp
 from functools import partial
 
-from utils import intensity_model_from_position, lognorm_paras
+from .utils import intensity_model_from_position, lognorm_paras
 
 
 class SurrogateData:
 
     def __init__(
-        self, nCells, track, place_field_parameter, behavior, place_cell_probability
+        self,
+        filePath=None,
+        nCells=None,
+        track=None,
+        place_field_parameter=None,
+        behavior=None,
     ):
         """
         ToDo:
@@ -34,10 +40,43 @@ class SurrogateData:
                 - rename activity -> place field parameters
         """
 
-        self.place_cell_status = np.zeros(nCells).astype("bool")
-        self.options = {"place_cell_distribution": "uniform"}
+        if filePath:
+            with open(filePath, "rb") as f:
+                data = pickle.load(f)
 
-        # self.behavior = behavior
+            self.tuning_curve_parameter = data["tuning_curve_parameter"]
+            behavior = data["behavior"]
+            self.activity = data["activity"]
+            self.field_activation = data["field_activation"]
+
+        else:
+            self.place_cell_status = np.zeros(nCells).astype("bool")
+            self.options = {"place_cell_distribution": "uniform"}
+
+            self.nCells = nCells
+            self.nbin = track["nbin"]
+            n_fields = len(place_field_parameter["field_probabilities"])
+
+            # self.intensity_model = intensity_model
+
+            self.activity = np.zeros((nCells, len(behavior["time"])))
+            self.field_activation = np.zeros(
+                (nCells, n_fields, behavior["trials"]["ct"]),
+                "bool",
+            )
+
+            self.tuning_curve_parameter = []
+            for n in range(nCells):
+
+                self.tuning_curve_parameter.append(
+                    self.set_PC_field(place_field_parameter)
+                )
+
+                if self.tuning_curve_parameter[n]["n_fields"] > 0:
+                    self.place_cell_status[n] = True
+
+                # self.rate_poisson_process.append(self.set_TC_fun(self.tuning_curve_parameter[n]))
+
         self.behavior = {
             "active": behavior["active"],
             "position": behavior["binpos_raw"],
@@ -50,33 +89,10 @@ class SurrogateData:
                     len(behavior["time_raw"]),
                 ]
             ),
-            "nbin": track["nbin"],
+            "nbin": 40,  # track["nbin"],
         }
 
-        self.nCells = nCells
-        self.nbin = track["nbin"]
-
-        # self.intensity_model = intensity_model
-
-        self.activity = np.zeros((nCells, len(self.behavior["time"])))
-        self.field_activation = np.zeros(
-            (nCells, place_field_parameter["n_fields"], self.behavior["trial_ct"]),
-            "bool",
-        )
-
-        self.tuning_curve_parameter = []
-        for n in range(nCells):
-
-            self.tuning_curve_parameter.append(
-                self.set_PC_field(place_field_parameter, place_cell_probability)
-            )
-
-            if self.tuning_curve_parameter[n]["n_fields"] > 0:
-                self.place_cell_status[n] = True
-
-            # self.rate_poisson_process.append(self.set_TC_fun(self.tuning_curve_parameter[n]))
-
-    def set_PC_field(self, place_field_parameter, place_cell_probability):
+    def set_PC_field(self, place_field_parameter):
         """
         if non-uniform distribution of place cells is introduced, need to implement different algorithm for drawing locations.
         Could be, that each parameter is drawn from a different distribution, as specified in the input place_field_parameter-dictionary
@@ -87,10 +103,9 @@ class SurrogateData:
         ):  ## uniform distribution
 
             tuning_curve_parameter["n_fields"] = (
-                random.randint(1, place_field_parameter["n_fields"])
-                if (random.random() < place_cell_probability)
-                else 0
-            )
+                random.random()
+                > np.atleast_1d(place_field_parameter["field_probabilities"])
+            ).sum()
 
             tuning_curve_parameter["A0"] = draft_para(place_field_parameter["A0"])
 
@@ -142,8 +157,6 @@ class SurrogateData:
                 self.activity[n, :], self.field_activation[n, : tcp["n_fields"], :] = (
                     generate_activity_fun(tcp, plt_bool=False)
                 )
-
-    # def generate_activity(self,n):
 
     def plot_activity(self, n):
 
@@ -268,6 +281,7 @@ def generate_activity(
         AP_frame[i] = np.argmin(abs(AP - behavior["time"]))
     T_AP = behavior["time"][AP_frame]  # timepoints of homogeneous pp (discrete time)
 
+    field_activation = None
     if tuning_curve_parameter["n_fields"] > 0:
 
         idx_keep = np.zeros(nAP, "bool")
