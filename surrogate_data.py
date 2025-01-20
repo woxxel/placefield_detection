@@ -59,7 +59,7 @@ class SurrogateData:
 
             # self.intensity_model = intensity_model
 
-            self.activity = np.zeros((nCells, len(behavior["time"])))
+            self.activity = np.zeros((nCells, len(behavior["time_raw"])))
             self.field_activation = np.zeros(
                 (nCells, n_fields, behavior["trials"]["ct"]),
                 "bool",
@@ -89,7 +89,7 @@ class SurrogateData:
                     len(behavior["time_raw"]),
                 ]
             ),
-            "nbin": 40,  # track["nbin"],
+            "nbin": track["nbin"],
         }
 
     def set_PC_field(self, place_field_parameter):
