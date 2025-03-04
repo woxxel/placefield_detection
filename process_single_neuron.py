@@ -98,8 +98,6 @@ class process_single_neuron:
             hbm = HierarchicalBayesInference(
                 processed_activity["spike_map"],
                 self.behavior["trials"]["dwelltime"],
-                nbin=self.parameter.nbin,
-                # np.arange(nbin),
                 logLevel=logging.ERROR,
             )
 

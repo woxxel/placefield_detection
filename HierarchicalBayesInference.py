@@ -27,13 +27,12 @@ logger.setLevel(logging.WARNING)
 
 class HierarchicalBayesInference(HierarchicalModel):
 
-    def __init__(self, N, dwelltime, nbin, logLevel=logging.ERROR):
+    def __init__(self, N, dwelltime, logLevel=logging.ERROR):
 
         self.N = N[np.newaxis, ...]
         self.dwelltime = dwelltime[np.newaxis, ...]
         self.nSamples, self.nbin = N.shape
-        self.x_arr = np.arange(nbin)[np.newaxis, np.newaxis, :]
-        self.nbin = nbin
+        self.x_arr = np.arange(self.nbin)[np.newaxis, np.newaxis, :]
 
         self.firing_map = N.sum(axis=0) / dwelltime.sum(axis=0)
 

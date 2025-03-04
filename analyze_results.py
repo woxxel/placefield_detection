@@ -360,9 +360,10 @@ def display_results(
             )
 
     ax_activation.legend()
+    # results["fields"]["parameter"]["local"]
     plt.setp(
         ax_activation,
-        xlim=[-1, groundtruth_activation.shape[1]],
+        xlim=[-1, results["fields"]["parameter"]["local"]["theta"].shape[-2]],
         ylim=[0 - 5, nbin + 5],
     )
     plt.setp(ax_theta, xlim=[0, nbin])

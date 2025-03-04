@@ -48,13 +48,14 @@ class SurrogateData:
             behavior = data["behavior"]
             self.activity = data["activity"]
             self.field_activation = data["field_activation"]
+            self.nbin = behavior["dwelltime"].shape[0]
 
         else:
             self.place_cell_status = np.zeros(nCells).astype("bool")
             self.options = {"place_cell_distribution": "uniform"}
 
             self.nCells = nCells
-            self.nbin = track["nbin"]
+            self.nbin = behavior["dwelltime"].shape[0]
             n_fields = len(place_field_parameter["field_probabilities"])
 
             # self.intensity_model = intensity_model
@@ -89,7 +90,7 @@ class SurrogateData:
                     len(behavior["time_raw"]),
                 ]
             ),
-            "nbin": track["nbin"],
+            "nbin": self.nbin,
         }
 
     def set_PC_field(self, place_field_parameter):
