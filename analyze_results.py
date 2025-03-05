@@ -561,7 +561,7 @@ def display_results(
     A0 = results["fields"]["parameter"]["global"]["A0"][0]
     A = results["fields"]["parameter"]["global"]["A"][:, 0]
 
-    if np.isfinite(A):
+    if np.any(np.isfinite(A)):
         max_val = max(A0 + A) * 2
     else:
         max_val = A0 * 10
