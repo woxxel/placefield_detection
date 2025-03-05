@@ -168,11 +168,8 @@ def display_results(
 
     if not (idx is None):
         results = extract_inference_results(results, idx)
-    # print(results)
     n_trials, nsteps = results["fields"]["p_x"]["local"]["theta"].shape[-2:]
-    # nbin = 40
     nbin = 40
-    # print(n_trials, nbin)
 
     if groundtruth_fields:
         groundtruth_N_f = len(groundtruth_fields["PF"])
