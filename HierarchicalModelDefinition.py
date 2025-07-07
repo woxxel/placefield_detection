@@ -10,7 +10,7 @@ class HierarchicalModel:
 
         self.nSamples = nSamples
 
-    def set_priors(self, priors_init, hierarchical=[], wrap=[]):
+    def set_priors(self, priors_init, hierarchical_in=[], wrap=[]):
         """
         Set the priors for the model. The priors are defined in the priors_init dictionary, which has to follow the following structure:
 
@@ -51,7 +51,7 @@ class HierarchicalModel:
         for param in priors_init:
             # print(param)
 
-            if param in hierarchical:
+            if param in hierarchical_in:
 
                 if priors_init[param]["hierarchical"]:
                     ## add the mean and sigma parameters for the hierarchical prior

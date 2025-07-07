@@ -1,10 +1,10 @@
-import os
+import os, random
 import numpy as np
 
 from .calculate_information import *
 from .information_corrections import *
-from placefield_dynamics.placefield_detection import *
-from placefield_dynamics.placefield_detection.utils import *
+# from placefield_dynamics.placefield_detection import *
+# from placefield_dynamics.placefield_detection.utils import *
 
 estimate_SI_bit_spike=1 # Choose to estimate SI (bit/spike) by setting the value to 1 (0 otherwise)
 estimate_SI_bit_sec=1 # Choose to estimate SI (bit/sec) by setting the value to 1 (0 otherwise)
@@ -12,19 +12,19 @@ estimate_MI=1 # Choose to estimate MI by setting the value to 1 (0 otherwise)
 measures_to_estimate=[estimate_SI_bit_spike,estimate_SI_bit_sec,estimate_MI]
 
 settings = {
-    'measures_to_estimate': measures_to_estimate,
-    'dt': 1/15.,
-    'active_bins_threshold': 10,
-    'firing_rate_threshold': 0,
-    'estimate_only_significantly_tuned_cells': 0,
-    'shuffle_type': 'cyclic',
-    'num_shuffles': 1000,
-    'tuning_significance_threshold': 0.05,
-    'subsampling_repetitions': 500,
-    'subsample_fraction': np.arange(0.1, 1.1, 0.1),
-    'plot_results': 1,
-    'save_figures': False,
-    'figures_directory': [os.path.join('figures')]
+    "measures_to_estimate": measures_to_estimate,
+    "dt": 1 / 15.0,
+    "active_bins_threshold": 10,
+    "firing_rate_threshold": 0.001,
+    "estimate_only_significantly_tuned_cells": 0,
+    "shuffle_type": "cyclic",
+    "num_shuffles": 1000,
+    "tuning_significance_threshold": 0.05,
+    "subsampling_repetitions": 500,
+    "subsample_fraction": np.arange(0.1, 1.1, 0.1),
+    "plot_results": 1,
+    "save_figures": False,
+    "figures_directory": [os.path.join("figures")],
 }
 
 def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
@@ -64,8 +64,9 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
     average_firing_rates = np.mean(spike_train,axis=1)/dt
 
     sufficiently_active_cells_indexes = np.where(np.logical_and(active_bins>=active_bins_threshold,average_firing_rates>firing_rate_threshold))[0]
-    fraction_sufficiently_active_cells=len(sufficiently_active_cells_indexes)/len(active_bins)
-    # print(fraction_sufficiently_active_cells)
+    fraction_sufficiently_active_cells = len(sufficiently_active_cells_indexes) / len(
+        active_bins
+    )
 
     if len(sufficiently_active_cells_indexes) > 0:
 
@@ -82,7 +83,7 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
             shuffle_type = settings['shuffle_type']
             num_shuffles = settings['num_shuffles']
             tuning_significance_threshold = settings['tuning_significance_threshold']
-            
+
             # obtaining shuffled spike trains:
             shuffled_spike_trains = shuffle_spike_trains(spike_train[sufficiently_active_cells_indexes,:], num_shuffles, shuffle_type)
 
@@ -96,15 +97,15 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                     SI_shuffle_bit_spike[:, i], _ = compute_SI(average_firing_rates[sufficiently_active_cells_indexes], temp_shuffled_tuning_curves, normalized_states_distribution)
 
                 tuning_significance_active_cells = 1 - np.sum(np.tile(SI_naive_bit_spike[:,np.newaxis], (1, num_shuffles)) > SI_shuffle_bit_spike, axis=1) / num_shuffles
-                
+
                 p_value_significantly_tuned_and_active_cells = tuning_significance_active_cells[tuning_significance_active_cells < tuning_significance_threshold]
-                
+
                 significantly_tuned_and_active_cells_indexes = sufficiently_active_cells_indexes[tuning_significance_active_cells < tuning_significance_threshold]
-                
+
                 SI_naive_bit_spike_significantly_tuned_cells = SI_naive_bit_spike[tuning_significance_active_cells < tuning_significance_threshold]
 
                 SI_naive_bit_sec_significantly_tuned_cells = SI_naive_bit_sec[tuning_significance_active_cells < tuning_significance_threshold]
-                
+
                 if len(significantly_tuned_and_active_cells_indexes) > 0:
                     average_SI_naive_bit_spike_significantly_tuned_cells = np.nanmean(SI_naive_bit_spike_significantly_tuned_cells, axis=0)
                     average_SI_naive_bit_sec_significantly_tuned_cells = np.nanmean(SI_naive_bit_sec_significantly_tuned_cells, axis=0)
@@ -114,17 +115,17 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                 MI_shuffle = np.empty((len(sufficiently_active_cells_indexes), num_shuffles))
                 for n in range(num_shuffles):
                     MI_shuffle[:, n] = compute_MI(shuffled_spike_trains[:, :, n], stimulus_trace)
-                
+
                 tuning_significance_active_cells = 1 - np.sum(np.tile(MI_naive, (1, num_shuffles)) > MI_shuffle, axis=1) / num_shuffles
-                
+
                 p_value_significantly_tuned_and_active_cells = tuning_significance_active_cells[tuning_significance_active_cells < tuning_significance_threshold]
-                
+
                 MI_naive_significantly_tuned_cells = MI_naive[tuning_significance_active_cells < tuning_significance_threshold]
-                
+
                 if len(MI_naive_significantly_tuned_cells) > 0:
                     average_MI_naive_significantly_tuned_cells = np.mean(MI_naive_significantly_tuned_cells, axis=0, nan=True)
                     significantly_tuned_and_active_cells_indexes = sufficiently_active_cells_indexes[tuning_significance_active_cells < tuning_significance_threshold]
-            
+
             if (measures_to_estimate[0] or measures_to_estimate[1]) and measures_to_estimate[2]:
                 MI_naive_significantly_tuned_cells = MI_naive[tuning_significance_active_cells < tuning_significance_threshold]
                 if len(MI_naive_significantly_tuned_cells) > 0:
@@ -142,13 +143,12 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                 MI_naive_significantly_tuned_cells = MI_naive
                 if len(MI_naive_significantly_tuned_cells) > 0:
                     average_MI_naive_significantly_tuned_cells = np.nanmean(MI_naive_significantly_tuned_cells)
-            
+
             if (measures_to_estimate[0] or measures_to_estimate[1]) and measures_to_estimate[2]:
                 MI_naive_significantly_tuned_cells = MI_naive
                 if len(MI_naive_significantly_tuned_cells) > 0:
                     average_MI_naive_significantly_tuned_cells = np.nanmean(MI_naive_significantly_tuned_cells)
 
-        
         if len(significantly_tuned_and_active_cells_indexes)>0:
             average_rates_significantly_tuned_cells = average_firing_rates[significantly_tuned_and_active_cells_indexes]
             active_bins_significantly_tuned_cells = active_bins[significantly_tuned_and_active_cells_indexes]
@@ -166,7 +166,6 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
             subsample_size = settings['subsample_fraction'] * T
             print('subsample_size:',subsample_size)
 
-
             print('Computing information as a function of subsample size:')
             if measures_to_estimate[0] or measures_to_estimate[1]:
                 if measures_to_estimate[2]:
@@ -182,43 +181,41 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
             figures_directory = settings['figures_directory']
             if measures_to_estimate[0]:
                 units = 'bit/spike'
-                
+
                 # SSR method:
                 SI_SSR_bit_spike, average_SI_SSR_bit_spike, SI_SSR_stability_bit_spike, average_SI_SSR_stability_bit_spike = perform_SSR(SI_naive_bit_spike_versus_sample_size, SI_shuffle_bit_spike_versus_sample_size, subsample_size, units, plot_results, save_figures, figures_directory)
-                
+
                 # BAE method:
                 SI_BAE_bit_spike, average_SI_BAE_bit_spike, SI_BAE_fit_R_2_bit_spike, average_SI_BAE_fit_R_2_bit_spike = perform_BAE(SI_naive_bit_spike_versus_sample_size, subsample_size, units, plot_results, save_figures, figures_directory)
-                
+
                 SI_disagreement_bit_spike = SI_BAE_bit_spike - SI_SSR_bit_spike
                 average_SI_disagreement_bit_spike = average_SI_BAE_bit_spike - average_SI_SSR_bit_spike
-
 
             # Correcting the bias for SI in bit/sec:
             if measures_to_estimate[1]:
                 units = 'bit/sec'
-                
+
                 # SSR method:
                 SI_SSR_bit_sec, average_SI_SSR_bit_sec, SI_SSR_stability_bit_sec, average_SI_SSR_stability_bit_sec = perform_SSR(SI_naive_bit_sec_versus_sample_size, SI_shuffle_bit_sec_versus_sample_size, subsample_size, units, plot_results, save_figures, figures_directory)
-                
+
                 # BAE method:
                 SI_BAE_bit_sec, average_SI_BAE_bit_sec, SI_BAE_fit_R_2_bit_sec, average_SI_BAE_fit_R_2_bit_sec = perform_BAE(SI_naive_bit_sec_versus_sample_size, subsample_size, units, plot_results, save_figures, figures_directory)
-                
+
                 SI_disagreement_bit_sec = SI_BAE_bit_sec - SI_SSR_bit_sec
                 average_SI_disagreement_bit_sec = average_SI_BAE_bit_sec - average_SI_SSR_bit_sec
 
             # Correcting the bias for MI:
             if measures_to_estimate[2]:
                 units = 'bit'
-                
+
                 # SSR method:
                 MI_SSR, average_MI_SSR, MI_SSR_stability, average_MI_SSR_stability = perform_SSR(MI_naive_versus_sample_size, MI_shuffle_versus_sample_size, subsample_size, units, plot_results, save_figures, figures_directory)
-                
+
                 # BAE method:
                 MI_BAE, average_MI_BAE, MI_BAE_fit_R_2, average_MI_BAE_fit_R_2 = perform_BAE(MI_naive_versus_sample_size, subsample_size, units, plot_results, save_figures, figures_directory)
-                
+
                 MI_disagreement = MI_BAE - MI_SSR
                 average_MI_disagreement = average_MI_BAE - average_MI_SSR
-        
 
             if plot_results or save_figures:
                 if measures_to_estimate[0]:  # for SI in bit/spike
@@ -259,8 +256,12 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                     plt.box(False)
                     if save_figures:
                         plt.savefig(os.path.join(figures_directory, 'Estimation quality - SI bit per spike.fig'))
-                        plt.savefig(os.path.join(figures_directory, 'Estimation quality - SI bit per spike.png'))
-            
+                        plt.savefig(
+                            os.path.join(
+                                figures_directory,
+                                "Estimation quality - SI bit per spike.png",
+                            )
+                        )
 
                 if measures_to_estimate[1]: # for SI in bit/sec
 
@@ -269,7 +270,7 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                         plt.figure()
                     else:
                         plt.figure(visible=False)
-                    
+
                     plt.plot(SI_SSR_bit_sec, SI_BAE_bit_sec, '.', markersize=15, color='b')
                     plt.plot([0, 1.1 * np.max(SI_BAE_bit_sec)], [0, 1.1 * np.max(SI_BAE_bit_sec)], '--k', linewidth=2)
                     plt.xlim([0, 1.1 * np.max(SI_BAE_bit_sec)])
@@ -283,13 +284,13 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                     if save_figures:
                         plt.savefig(os.path.join(figures_directory, 'BAE versus SSR - SI bit per sec.fig'))
                         plt.savefig(os.path.join(figures_directory, 'BAE versus SSR - SI bit per sec.png'))
-                    
+
                     # Estimation quality
                     if plot_results:
                         plt.figure()
                     else:
                         plt.figure(visible=False)
-                    
+
                     plt.plot(SI_SSR_stability_bit_sec, SI_BAE_fit_R_2_bit_sec, '.', markersize=15, color='b')
                     plt.xlim([0, 1])
                     plt.ylim([0, 1])
@@ -301,9 +302,12 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                     plt.box(False)
                     if save_figures:
                         plt.savefig(os.path.join(figures_directory, 'Estimation quality - SI bit per sec.fig'))
-                        plt.savefig(os.path.join(figures_directory, 'Estimation quality - SI bit per sec.png'))
-                            
-                
+                        plt.savefig(
+                            os.path.join(
+                                figures_directory,
+                                "Estimation quality - SI bit per sec.png",
+                            )
+                        )
 
                 if measures_to_estimate[2]: # for MI
                     # Cross validation:
@@ -341,21 +345,23 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                     plt.box(False)
                     if save_figures:
                         plt.savefig(os.path.join(figures_directory, 'Estimation quality - MI.fig'))
-                        plt.savefig(os.path.join(figures_directory, 'Estimation quality - MI.png'))
-                            
+                        plt.savefig(
+                            os.path.join(
+                                figures_directory, "Estimation quality - MI.png"
+                            )
+                        )
 
-            
             if not settings['estimate_only_significantly_tuned_cells']:
                 shuffle_type = settings['shuffle_type']
                 num_shuffles = settings['num_shuffles']
                 tuning_significance_threshold = settings['tuning_significance_threshold']
-                
+
                 # obtaining shuffled spike trains:
                 shuffled_spike_trains = shuffle_spike_trains(spike_train[sufficiently_active_cells_indexes,:], num_shuffles, shuffle_type)
-                
+
                 # Identifying significantly modulated cells:
                 if measures_to_estimate[0] or measures_to_estimate[1]: # based on the SI in active cells for naive versus shuffle
-                    
+
                     # shuffle SI:
                     SI_shuffle_bit_spike = np.empty((len(sufficiently_active_cells_indexes), num_shuffles))
                     # display_progress_bar('Computing shuffle information for the tuning significance test: ', False)
@@ -365,13 +371,13 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                         SI_shuffle_bit_spike[:,n], _ = compute_SI(average_firing_rates[sufficiently_active_cells_indexes], temp_shuffled_tuning_curves, normalized_states_distribution)
                     # display_progress_bar(' done', False)
                     # display_progress_bar('', True)
-                    
+
                     # Finding significantly tuned cells:
                     tuning_significance_active_cells = 1 - np.sum(np.tile(SI_naive_bit_spike[:,np.newaxis], (1, num_shuffles)) > SI_shuffle_bit_spike, axis=1) / num_shuffles
                     p_value_significantly_tuned_and_active_cells = tuning_significance_active_cells[tuning_significance_active_cells < tuning_significance_threshold]
                     significantly_tuned_and_active_cells_indexes = sufficiently_active_cells_indexes[tuning_significance_active_cells < tuning_significance_threshold]
                 elif measures_to_estimate[2]: # based on the MI in active cells for naive versus shuffle
-                    
+
                     # shuffle MI:
                     MI_shuffle = np.empty((len(sufficiently_active_cells_indexes), num_shuffles))
                     # display_progress_bar('Computing shuffle information: ', False)
@@ -380,15 +386,13 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                         MI_shuffle[:,n] = compute_MI(np.squeeze(shuffled_spike_trains[:,:,n]), stimulus_trace)
                     # display_progress_bar(' done', False)
                     # display_progress_bar('', True)
-                    
+
                     # Finding significantly tuned cells:
                     tuning_significance_active_cells = 1 - np.sum(np.tile(MI_naive, (1, num_shuffles)) > MI_shuffle, axis=1) / num_shuffles
                     p_value_significantly_tuned_and_active_cells = tuning_significance_active_cells[tuning_significance_active_cells < tuning_significance_threshold]
                     if len(MI_naive_significantly_tuned_cells) > 0:
                         significantly_tuned_and_active_cells_indexes = sufficiently_active_cells_indexes[tuning_significance_active_cells < tuning_significance_threshold]
 
-
-        
             unbiased_information_estimation_results = {}
 
             # General parameters
@@ -456,8 +460,6 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                 unbiased_information_estimation_results['information']['average_SI_SSR_stability_bit_sec'] = average_SI_SSR_stability_bit_sec
                 unbiased_information_estimation_results['information']['average_SI_BAE_fit_R_2_bit_sec'] = average_SI_BAE_fit_R_2_bit_sec
 
-            
-
             if measures_to_estimate[2]: # MI
                 # For individual cells:
                 unbiased_information_estimation_results['information']['MI_naive'] = MI_naive_significantly_tuned_cells
@@ -466,7 +468,7 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
                 unbiased_information_estimation_results['information']['MI_disagreement'] = MI_disagreement
                 unbiased_information_estimation_results['information']['MI_SSR_stability'] = MI_SSR_stability
                 unbiased_information_estimation_results['information']['MI_BAE_fit_R_2'] = MI_BAE_fit_R_2
-                
+
                 # Average across the population:
                 unbiased_information_estimation_results['information']['average_MI_naive'] = average_MI_naive_significantly_tuned_cells
                 unbiased_information_estimation_results['information']['average_MI_SSR'] = average_MI_SSR
@@ -483,7 +485,6 @@ def estimate_unbiased_information(spike_train,stimulus_trace,settings=settings):
         print('No sufficiently active cells were found')
 
     return unbiased_information_estimation_results
-
 
 
 def compute_tuning_curves(spike_train, stimulus_trace, dt):

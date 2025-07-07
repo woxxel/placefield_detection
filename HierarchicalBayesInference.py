@@ -13,7 +13,7 @@ from ultranest.mlfriends import RobustEllipsoidRegion
 
 from .HierarchicalModelDefinition import HierarchicalModel
 from .utils import circmean as weighted_circmean, model_of_tuning_curve
-from .analyze_results import build_inference_results_structure
+from .analyze_results import build_inference_results
 
 os.environ["OMP_NUM_THREADS"] = "1"
 logging.basicConfig(level=logging.ERROR)
@@ -42,12 +42,12 @@ class HierarchicalBayesInference(HierarchicalModel):
         self.log = logging.getLogger("nestLogger")
         self.log.setLevel(logLevel)
 
-    def set_priors(self, priors_init=None, N_f=None, hierarchical_in=[], wrap=[]):
+    def set_priors(self, priors_init=None, hierarchical_in=[], wrap=[], **kwargs):
 
         halfnorm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(x)
         norm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(2 * x - 1)
 
-        self.N_f = N_f
+        self.N_f = kwargs.get("N_f", 1)
 
         if priors_init is None:
 
@@ -332,12 +332,12 @@ class HierarchicalBayesInference(HierarchicalModel):
     def generate_infield_ranges(self, params, cut_range=2.0):
         ## define ranges, in which the different models are compared
         N_in = params["A0"].shape[0]
-        infield_range = np.zeros((self.N_f, N_in, self.nSamples, self.nbin), dtype=bool)
+        nSamples = self.nSamples if len(self.hierarchical) > 0 else 1
+        infield_range = np.zeros((self.N_f, N_in, nSamples, self.nbin), dtype=bool)
 
         for field_model, PF in enumerate(
             params["PF"]
         ):  # actually don't need the "if" before
-
             lower = np.floor(
                 np.mod(PF["theta"] - cut_range * PF["sigma"], self.nbin)
             ).astype("int")
@@ -346,7 +346,7 @@ class HierarchicalBayesInference(HierarchicalModel):
             ).astype("int")
 
             for i in range(N_in):
-                for trial in range(self.nSamples):
+                for trial in range(nSamples):
                     if lower[i, trial] < upper[i, trial]:
                         infield_range[
                             field_model, i, trial, lower[i, trial] : upper[i, trial]
@@ -575,9 +575,10 @@ class HierarchicalBayesInference(HierarchicalModel):
         limit_execution_time=None,
     ):
         t_start = time.time()
-        self.inference_results = build_inference_results_structure(
+        self.inference_results = build_inference_results(
             N_f=2,
             nbin=self.nbin,
+            mode="bayesian",
             n_trials=self.nSamples,
             hierarchical=hierarchical,
         )
@@ -660,9 +661,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                 )
                 self.inference_results["fields"]["n_modes"] = field_model
 
-            self.inference_results["status"]["is_place_cell"]["bayesian_method"] = (
-                field_model > 0
-            )
+            self.inference_results["is_place_cell"] = field_model > 0
 
             ## reliability of place fields
             for f in range(field_model):
@@ -670,17 +669,17 @@ class HierarchicalBayesInference(HierarchicalModel):
                     self.inference_results["fields"]["active_trials"][f, ...] > 0.5
                 ).sum() / self.nSamples
 
-        if "firingstats" in which:
-            ## firing rate statistics
-            self.inference_results["firingstats"]["trial_map"] = self.N.sum(
-                axis=0
-            ) / self.dwelltime.sum(axis=0)
-            self.inference_results["firingstats"]["map"] = self.N.sum(
-                axis=(0, 1)
-            ) / self.dwelltime.sum(axis=(0, 1))
-            self.inference_results["firingstats"]["rate"] = (
-                self.N.sum() / self.dwelltime.sum()
-            )
+        # if "firingstats" in which:
+        #     ## firing rate statistics
+        #     self.inference_results["firingstats"]["trial_map"] = self.N.sum(
+        #         axis=0
+        #     ) / self.dwelltime.sum(axis=0)
+        #     self.inference_results["firingstats"]["map"] = self.N.sum(
+        #         axis=(0, 1)
+        #     ) / self.dwelltime.sum(axis=(0, 1))
+        #     self.inference_results["firingstats"]["rate"] = (
+        #         self.N.sum() / self.dwelltime.sum()
+        #     )
 
     def run_sampling(
         self,
@@ -800,9 +799,10 @@ class HierarchicalBayesInference(HierarchicalModel):
         self.n_trials = self.nSamples
 
         if not hasattr(self, "inference_results"):
-            self.inference_results = build_inference_results_structure(
+            self.inference_results = build_inference_results(
                 N_f=2,
                 nbin=self.nbin,
+                mode="bayesian",
                 n_trials=self.nSamples,
                 n_steps=n_steps,
                 hierarchical=self.hierarchical,

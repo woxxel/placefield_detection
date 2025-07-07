@@ -1,42 +1,90 @@
-import sys
-from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
 
-# sys.path.append(str(Path(__file__).resolve().parents[1]))
-# print(str(Path(__file__).resolve().parent))
-
-# from scipy.ndimage import gaussian_filter as gauss_filter
 from .utils import gauss_smooth as gauss_filter, model_of_tuning_curve
 
 
-def build_inference_results_structure(
-    n_cells=1,
-    N_f=None,
-    nbin=None,
-    n_trials=None,
-    n_steps=100,
-    hierarchical=[],
-    posterior_arrays=None,
-):
+def build_results(n_cells=1, nbin=40, n_trials=1, modes=[], **kwargs):
 
     results = {}
 
     results["status"] = {
-        "is_place_cell": {},
         "SNR": np.full(n_cells, np.NaN),
         "r_value": np.full(n_cells, np.NaN),
         # "MI_value": np.full(n_cells, np.NaN),
         ## p-value? z-score? Isec, MI, uMI, etc?
     }
 
-    for method in ["peak", "information", "stability", "bayesian"]:
-        results["status"]["is_place_cell"][f"{method}_method"] = np.zeros(
-            n_cells, dtype=bool
+    results["firingstats"] = {
+        "rate": np.full(n_cells, np.NaN),
+        "map": np.full((n_cells, nbin), np.NaN),
+        "trial_map": np.full((n_cells, n_trials, nbin), np.NaN),
+    }
+
+    results = results if n_cells > 1 else squeeze_deep_dict(results, ax=0)
+
+    for mode in modes:
+        results[mode] = build_inference_results(
+            n_cells=n_cells,
+            nbin=nbin,
+            n_trials=n_trials,
+            mode=mode,
+            **kwargs,
+        )
+    # print(results)
+    return results
+
+
+def build_inference_results(
+    n_cells=1, N_f=1, nbin=None, mode="bayesian", n_trials=None, **kwargs
+):
+
+    results = {}
+
+    results["is_place_cell"] = np.zeros(n_cells, dtype=bool)
+
+    if mode == "bayesian":
+
+        results["fields"] = build_inference_results__bayesian(
+            n_cells,
+            N_f,
+            nbin,
+            n_trials,
+            kwargs.get("n_steps", 100),
+            kwargs.get("hierarchical", []),
+            kwargs.get("posterior_arrays", None),
         )
 
-    results["fields"] = {
+    if mode == "thresholding":
+        results["fields"] = build_inference_results__thresholding(n_cells, N_f)
+
+    ## if method is called for nCells = 1, collapse data from first dimension
+    # return results
+    return results if n_cells > 1 else squeeze_deep_dict(results, ax=0)
+
+
+def build_inference_results__thresholding(n_cells=1, N_f=0):
+
+    fields = {
+        "n_fields": np.zeros(n_cells, dtype=int),
+        "parameter": {
+            "baseline": np.zeros((n_cells, N_f)),
+            "amplitude": np.zeros((n_cells, N_f)),
+            "location": np.zeros((n_cells, N_f)),
+            "width": np.zeros((n_cells, N_f)),
+        },
+    }
+
+    return fields
+
+
+def build_inference_results__bayesian(
+    n_cells, N_f, nbin, n_trials, n_steps=100, hierarchical=[], posterior_arrays=None
+):
+
+    ## build dictionary shape
+    fields = {
         "n_modes": np.zeros(n_cells, dtype=int),
         "parameter": {
             ## for each parameter
@@ -57,60 +105,50 @@ def build_inference_results_structure(
 
     ## define ranges for each parameter
     if posterior_arrays is None:
-        results["fields"]["x"]["A0"] = np.linspace(0, 10, n_steps + 1)
-        results["fields"]["x"]["A"] = np.linspace(0, 100, n_steps + 1)
-        results["fields"]["x"]["sigma"] = np.linspace(0, nbin / 2.0, n_steps + 1)
-        results["fields"]["x"]["theta"] = np.linspace(0, nbin, n_steps + 1)
+        fields["x"]["A0"] = np.linspace(0, 10, n_steps + 1)
+        fields["x"]["A"] = np.linspace(0, 100, n_steps + 1)
+        fields["x"]["sigma"] = np.linspace(0, nbin / 2.0, n_steps + 1)
+        fields["x"]["theta"] = np.linspace(0, nbin, n_steps + 1)
     else:
-        results["fields"]["x"] = posterior_arrays
+        fields["x"] = posterior_arrays
 
     # results["fields"]["x"]["theta"] = np.linspace(0, nbin, nbin + 1)
 
+    ## fill dictionary with default values
     key = "A0"
-    results["fields"]["parameter"]["global"][key] = np.zeros((n_cells, 3))
-    results["fields"]["p_x"]["global"][key] = np.zeros((n_cells, n_steps))
+    fields["parameter"]["global"][key] = np.zeros((n_cells, 3))
+    fields["p_x"]["global"][key] = np.zeros((n_cells, n_steps))
 
-    results["fields"]["parameter"]["local"][key] = (
+    fields["parameter"]["local"][key] = (
         np.zeros((n_cells, n_trials, 3)) if key in hierarchical else None
     )
-    results["fields"]["p_x"]["local"][key] = (
+    fields["p_x"]["local"][key] = (
         np.zeros((n_cells, n_trials, n_steps)) if key in hierarchical else None
     )
 
     for key in ["theta", "A", "sigma"]:
-        n = len(results["fields"]["x"][key]) - 1
+        n = len(fields["x"][key]) - 1
 
-        results["fields"]["parameter"]["global"][key] = np.zeros((n_cells, N_f, 3))
-        results["fields"]["p_x"]["global"][key] = np.zeros((n_cells, N_f, n))
+        fields["parameter"]["global"][key] = np.zeros((n_cells, N_f, 3))
+        fields["p_x"]["global"][key] = np.zeros((n_cells, N_f, n))
 
-        results["fields"]["parameter"]["local"][key] = (
+        fields["parameter"]["local"][key] = (
             np.zeros((n_cells, N_f, n_trials, 3)) if key in hierarchical else None
         )
-        results["fields"]["p_x"]["local"][key] = (
+        fields["p_x"]["local"][key] = (
             np.zeros((n_cells, N_f, n_trials, n)) if key in hierarchical else None
         )
+    return fields
 
-    results["firingstats"] = {
-        "rate": np.full(n_cells, np.NaN),
-        "map": np.full((n_cells, nbin), np.NaN),
-        # "CI": np.full((n_cells, 2, nbin), np.NaN),
-        "trial_map": np.full((n_cells, n_trials, nbin), np.NaN),
-    }
 
-    ## if method is called for nCells = 1, collapse data from first dimension
-    def squeeze_deep_dict(d, ax=None):
-        for key in d.keys():
-            if isinstance(d[key], dict):
-                d[key] = squeeze_deep_dict(d[key], ax)
-            else:
-                if isinstance(d[key], np.ndarray) and (d[key].shape[0] == 1):
-                    d[key] = np.squeeze(d[key], axis=ax)
-        return d
-
-    if n_cells == 1:
-        results = squeeze_deep_dict(results, ax=0)
-
-    return results
+def squeeze_deep_dict(d, ax=None):
+    for key in d.keys():
+        if isinstance(d[key], dict):
+            d[key] = squeeze_deep_dict(d[key], ax)
+        else:
+            if isinstance(d[key], np.ndarray) and (d[key].shape[0] == 1):
+                d[key] = np.squeeze(d[key], axis=ax)
+    return d
 
 
 def handover_inference_results(
@@ -139,8 +177,13 @@ def extract_inference_results(
     if results_target is None:
         nbin = 40
         _, N_f, n_trials, _ = results_source["fields"]["p_x"]["local"]["theta"].shape
-        results_target = build_inference_results_structure(
-            n_cells=1, N_f=N_f, nbin=nbin, n_trials=n_trials, hierarchical=["theta"]
+        results_target = build_inference_results(
+            n_cells=1,
+            N_f=N_f,
+            nbin=nbin,
+            mode="bayesian",
+            n_trials=n_trials,
+            hierarchical=["theta"],
         )
         # print(results_target["fields"]["parameter"])
 
@@ -171,6 +214,7 @@ def display_results(
     n_trials, nsteps = results["fields"]["p_x"]["local"]["theta"].shape[-2:]
     nbin = 40
 
+    groundtruth_N_f = 0
     if groundtruth_fields:
         groundtruth_N_f = len(groundtruth_fields["PF"])
         field_match = np.full(groundtruth_N_f, -1, "int")

@@ -422,79 +422,110 @@ def get_reliability(trial_map, map, field, t):
     return rel, field_max, trial_field
 
 
-def get_firingrate(S, f=15, sd_r=1, Ns_thr=1, prctile=50):
+def obtain_significant_events_from_one_sided_process(
+    data, sd_r=-1, baseline_mode="hsm", sd_mode="iqr", **kwargs
+):
     """
-    calculates the firing rate from a an array of spike probabilities ('S' from CaImAn)
-    by thresholding data according to multiples sd_r of estimated variance
+    estimates the standard deviation of a one-sided process (e.g. spike train)
+    by using the half-sample mode (hsm) or the median absolute deviation (mad)
 
-    Ns_thr:
-      - minimum number of non-zero entries in S
+    data:           process from which stats are inferred (spike train, firing map, etc)
+    baseline_mode:  'hsm' for half-sample mode, 'percentile' for percentile-based estimation,
+    SD_mode:        'iqr' for interquartile range, 'mad' for median absolute deviation
+    kwargs:         additional parameters
+            for "hsm":        no additional parameters required
+            for "percentile": 'prctile' (default 50) to specify the percentile to use
 
-
-    returns
-        - firing rate (in spikes/sec, depending on provided framerate f)
-        - calculated spiking threshold
-        - array with number of spikes per frame
-
+    returns:
+        - estimated standard deviation
+        - baseline value
     """
 
-    S[S < S.max() * 10 ** (-3)] = 0
-    Ns = (S > 0).sum()
-    if Ns < Ns_thr:
-        return 0, np.NaN, np.zeros_like(S)
-    else:
-        # estimate noise level by using median value (assuming most entries are not actual spikes)
-        # and obtain values below median to estimate variance from negative half-gaussian distribution
-        trace = S[S > 0]
-        # baseline = np.median(trace)
-        baseline = np.percentile(trace, prctile)
+    baseline, sd = estimate_stats_from_one_sided_process(
+        data, baseline_mode=baseline_mode, sd_mode=sd_mode, **kwargs
+    )
 
-        if sd_r != 0:
-            trace -= baseline
-            trace *= -1 * (trace <= 0)
+    # either use provided sd_r,
+    # or calculate multiples of variance to ensure
+    # p-value of 0.01 (including correction for multiple comparisons)
+    p_value = kwargs.get("p_value", 0.1)
+    sd_r = sstats.norm.ppf((1 - p_value) ** (1 / len(data))) if (sd_r == -1) else sd_r
 
-            # calculate variance
-            Ns_baseline = (trace > 0).sum()
-            noise = np.sqrt((trace**2).sum() / (Ns_baseline * (1 - 2 / np.pi)))
-        else:
-            noise = 0
-        # either use provided sd_r, or calculate multiples of variance to ensure
-        # p-value of 10% (including correction for multiple comparisons)
-        sd_r = sstats.norm.ppf((1 - 0.01) ** (1 / Ns)) if (sd_r == -1) else sd_r
-        # print(sd_r,noise)
-        firing_threshold_adapt = baseline + sd_r * noise
-        # print(firing_threshold_adapt)
-        # number of spikes in each bin is the value multiple above calculated threshold
-        activity = np.floor(S / firing_threshold_adapt)
-        # activity = np.ceil(S / firing_threshold_adapt)
-        N_spikes = activity.sum()
+    ## calculate threshold for significant events
+    threshold = baseline + sd_r * sd
+    significant_events = data / threshold
+    significant_events[significant_events < 1] = 0
 
-        return (
-            N_spikes / (S.shape[0] / f),
-            firing_threshold_adapt,
-            activity,
-        )  # S > firing_threshold_adapt#
+    return significant_events, threshold, sd_r
 
 
-def get_firingmap(S, binpos, dwelltime=None, nbin=None):
+def estimate_stats_from_one_sided_process(
+    data, baseline_mode="hsm", sd_mode="iqr", only_nonzero_entries=False, **kwargs
+):
+    """
+    estimates the standard deviation of a one-sided process (e.g. spike train)
+    by using the half-sample mode (hsm) or the median absolute deviation (mad)
 
-    if not nbin:
-        nbin = np.max(binpos) + 1
+    data:           process from which stats are inferred (spike train, firing map, etc)
+    baseline_mode:  'hsm' for half-sample mode, 'percentile' for percentile-based estimation,
+    SD_mode:        'iqr' for interquartile range, 'mad' for median absolute deviation
+    kwargs:         additional parameters
+            for "hsm":        no additional parameters required
+            for "percentile": 'prctile' (default 50) to specify the percentile to use
 
-    ### calculates the firing map
-    spike_times = np.where(S)
-    spikes = S[spike_times]
-    binpos = binpos[spike_times]  # .astype('int')
 
-    firingmap = np.zeros(nbin)
-    for p, s in zip(binpos, spikes):  # range(len(binpos)):
-        firingmap[p] = firingmap[p] + s
+    returns:
+        - estimated standard deviation
+    """
 
-    if not (dwelltime is None):
-        firingmap = firingmap / dwelltime
-        firingmap[dwelltime == 0] = np.NaN
+    # estimate noise level by using median or half-sampling mode method (assuming most entries are not actual spikes)
 
-    return firingmap
+    if only_nonzero_entries:
+        data = data[data > 0]
+
+    if baseline_mode == "hsm":
+        baseline = calculate_hsm(data)
+    elif baseline_mode == "percentile":
+        prctile = kwargs.get("prctile", 50)
+        # try:
+        # if only_nonzero_entries:
+        # baseline = np.percentile(data[data > 0], prctile)
+        # else:
+        baseline = np.percentile(data, prctile)
+        # except:
+        # baseline = 0
+        baseline = max(baseline, 10 ** (-6))
+
+    # and use values below baseline to estimate variance from negative half-gaussian distribution
+
+    if sd_mode is None:
+        # if no sd_mode is specified, return baseline and 0 as sd
+        return baseline, 0
+
+    ### restrict data to one side
+    data = data - baseline
+    data = -data[data <= 0]
+    datapoints = len(data)
+    # print(datapoints, "data points used for sd estimation")
+
+    ### calculate standard deviation
+    if sd_mode == "iqr":
+        ## pretty much equals to "median absolute deviation" (mad)
+        data.sort()
+        # approximate standard deviation from inter quartile range
+        Ns = round(datapoints * 0.5)  # 25 quartile is at half of data points
+        # estimate (iqr_75 - iqr_25) from 2*(median - iqr_25)
+        iqr = 2 * data[-Ns]
+        sd = iqr / 1.349  # iqr relates to SD via a factor of 1.349 (theory)
+        # print(sd, "sd from mad ")
+    elif sd_mode == "var":
+        # sd = np.sqrt(
+        #     np.var(data, ddof=1) / (1 - 2 / np.pi)
+        # )  # variance of one-sided process
+        sd = np.sqrt((data**2).sum() / (datapoints * (1 - 2 / np.pi)))
+        # print(sd, "sd from variance ")
+
+    return baseline, sd
 
 
 def get_MI(p_joint, p_x, p_f):

@@ -1,12 +1,13 @@
 import logging
 
-from .placecell_detection_methods import (
-    peak_method_bare,
+from .alternative_detection_methods import (
+    peak_method,
     information_method,
     stability_method,
 )
 
 from .utils import prepare_activity
+from .analyze_results import build_results
 
 from .HierarchicalBayesInference import HierarchicalBayesInference
 
@@ -16,20 +17,48 @@ class process_single_neuron:
     def __init__(
         self,
         behavior,
-        parameter,
         mode_place_cell_detection=["peak", "information", "stability", "bayesian"],
         mode_place_field_detection=["bayesian", "threshold"],
         **kwargs,
     ):
+        """
+        TODO:
+        * obtain nbin from behavior
+        """
 
         self.behavior = behavior
-        self.parameter = parameter
 
         self.mode_place_cell_detection = mode_place_cell_detection
         self.mode_place_field_detection = mode_place_field_detection
 
-        if "plot_it" in kwargs:
-            self.plot_it = kwargs["plot_it"]
+        self.plot_it = kwargs.get("plot_it", False)
+
+    def run_preprocessing(self, activity):
+        """
+        Run some general functions on activity, such as analysis of firing activity
+        """
+
+        modes = self.mode_place_cell_detection + self.mode_place_field_detection
+        unique_modes = list(set(modes))
+
+        self.results = build_results(
+            n_cells=1,
+            nbin=self.behavior["nbin"],
+            n_trials=self.behavior["trials"]["ct"],
+            modes=unique_modes,
+        )
+
+        ### throw into separate function
+
+        ## firing rate statistics
+        self.prepared_activity = prepare_activity(
+            activity,
+            self.behavior,
+        )
+
+        self.activity = self.prepared_activity["spikes"]
+        for key in ["map_rates", "map_trial_rates", "firing_rate"]:
+            self.results["firingstats"][key] = self.prepared_activity[key]
 
     def run_detection(self, activity):
 
@@ -39,69 +68,62 @@ class process_single_neuron:
         #     return None
 
         # t_start = time.time()
+
+        self.run_preprocessing(activity)
+
         self.place_cell_results = {}
-        self.place_cell_detection(activity)
-        self.place_field_detection(activity)
+        self.place_cell_detection()
+        # self.place_field_detection()
 
-        ## finally, gather results
-        results = self.place_cell_results["bayesian"]
-        results["status"]["is_place_cell"]["peak_method"] = self.place_cell_results[
-            "peak"
-        ]
-        results["status"]["is_place_cell"]["information_method"] = (
-            self.place_cell_results["information"]
-        )
+        ## finally, gather results (appears to carry only bool!)
+        # results = self.place_cell_results.get(
+        #     "bayesian", {"status": {"is_place_cell": {}}}
+        # )
+        for method in self.mode_place_cell_detection:
+            # if method in self.place_cell_results:
+            self.results[method] = self.place_cell_results[method]
+            # else:
+            # self.results[method] = {"status": {"is_place_cell": False}}
+        # self.results["peak"] = self.place_cell_results["peak"]
+        # self.results["information"] = self.place_cell_results["information"]
 
-        return results
+        return self.results
 
-    def place_cell_detection(self, activity, **kwargs):
-
-        # self.bin_centers = self.parameter.bin_array_centers
+    def place_cell_detection(self, **kwargs):
 
         if "peak" in self.mode_place_cell_detection:
-            self.place_cell_results["peak"] = peak_method_bare(
+            self.place_cell_results["peak"] = peak_method(
                 behavior=self.behavior,
-                neuron_activity=activity[self.behavior["active"]],
-                nbin=self.parameter.nbin,
+                neuron_activity=self.activity,
                 plot=self.plot_it,
-                # bin_array_centers=self.nbin_centers,
                 **kwargs,
             )
 
         if "information" in self.mode_place_cell_detection:
             self.place_cell_results["information"] = information_method(
                 self.behavior,
-                neuron_activity=activity[self.behavior["active"]],
-                nbin=self.parameter.nbin,
+                neuron_activity=self.activity,
                 plot=self.plot_it,
-                # bin_array_centers=self.nbin_centers,
                 **kwargs,
             )
 
-        # if "stability" in self.mode_place_cell_detection:
-        #     self.place_cell_results["stability"] = stability_method(
-        #         self.behavior,
-        #         neuron_activity=activity[self.behavior["active"]],
-        #         nbin=self.parameter.nbin,
-        #         # bin_array_centers=self.nbin_centers,
-        #         **kwargs,
-        #     )
-
-    def place_field_detection(self, activity, **kwargs):
-
-        nbin = self.parameter.nbin
+    def place_field_detection(self, **kwargs):
 
         if "bayesian" in self.mode_place_field_detection:
-            processed_activity = prepare_activity(
-                activity, self.behavior["active"], self.behavior["trials"], nbin
-            )
+
             hbm = HierarchicalBayesInference(
-                processed_activity["spike_map"],
+                self.prepared_activity["map_trial_spikes"],
                 self.behavior["trials"]["dwelltime"],
                 logLevel=logging.ERROR,
             )
 
-            hbm.model_comparison(hierarchical=["theta"], limit_execution_time=600)
+            limit_execution_time = kwargs.get("limit_execution_time", 600)
+            show_status = kwargs.get("show_status", False)
+            hbm.model_comparison(
+                hierarchical=["theta"],
+                limit_execution_time=limit_execution_time,
+                show_status=show_status,
+            )
 
             self.place_cell_results["bayesian"] = hbm.inference_results
 
