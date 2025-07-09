@@ -9,17 +9,17 @@ def build_results(n_cells=1, nbin=40, n_trials=1, modes=[], **kwargs):
 
     results = {}
 
-    results["status"] = {
-        "SNR": np.full(n_cells, np.NaN),
-        "r_value": np.full(n_cells, np.NaN),
-        # "MI_value": np.full(n_cells, np.NaN),
-        ## p-value? z-score? Isec, MI, uMI, etc?
-    }
+    # results["status"] = {
+    #     "SNR": np.full(n_cells, np.NaN),
+    #     "r_value": np.full(n_cells, np.NaN),
+    #     # "MI_value": np.full(n_cells, np.NaN),
+    #     ## p-value? z-score? Isec, MI, uMI, etc?
+    # }
 
     results["firingstats"] = {
-        "rate": np.full(n_cells, np.NaN),
-        "map": np.full((n_cells, nbin), np.NaN),
-        "trial_map": np.full((n_cells, n_trials, nbin), np.NaN),
+        "firing_rate": np.full(n_cells, np.NaN),
+        "map_rates": np.full((n_cells, nbin), np.NaN),
+        "map_trial_rates": np.full((n_cells, n_trials, nbin), np.NaN),
     }
 
     results = results if n_cells > 1 else squeeze_deep_dict(results, ax=0)

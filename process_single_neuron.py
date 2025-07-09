@@ -25,6 +25,7 @@ class process_single_neuron:
         TODO:
         * obtain nbin from behavior
         """
+        self.preprocessed = False
 
         self.behavior = behavior
 
@@ -48,6 +49,8 @@ class process_single_neuron:
             modes=unique_modes,
         )
 
+        self.place_cell_results = {}
+
         ### throw into separate function
 
         ## firing rate statistics
@@ -60,7 +63,9 @@ class process_single_neuron:
         for key in ["map_rates", "map_trial_rates", "firing_rate"]:
             self.results["firingstats"][key] = self.prepared_activity[key]
 
-    def run_detection(self, activity):
+        self.preprocessed = True
+
+    def run_detection(self, activity, **kwargs):
 
         ## check, if there is enough activity
         # if (activity[self.behavior["active"]] > 0).sum() < 10:
@@ -68,12 +73,14 @@ class process_single_neuron:
         #     return None
 
         # t_start = time.time()
+        assert (
+            self.preprocessed
+        ), "Preprocessing not run. Please run `run_preprocessing` first."
 
         self.run_preprocessing(activity)
 
-        self.place_cell_results = {}
         self.place_cell_detection()
-        # self.place_field_detection()
+        self.place_field_detection(**kwargs)
 
         ## finally, gather results (appears to carry only bool!)
         # results = self.place_cell_results.get(
@@ -101,7 +108,7 @@ class process_single_neuron:
 
         if "information" in self.mode_place_cell_detection:
             self.place_cell_results["information"] = information_method(
-                self.behavior,
+                behavior=self.behavior,
                 neuron_activity=self.activity,
                 plot=self.plot_it,
                 **kwargs,
