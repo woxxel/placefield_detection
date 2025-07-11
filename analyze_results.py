@@ -211,15 +211,17 @@ def display_results(
 
     if not (idx is None):
         results = extract_inference_results(results, idx)
-    n_trials, nsteps = results["fields"]["p_x"]["local"]["theta"].shape[-2:]
+    
+    fields = results["bayesian"]["fields"]
+    n_trials, nsteps = fields["p_x"]["local"]["theta"].shape[-2:]
     nbin = 40
 
     groundtruth_N_f = 0
     if groundtruth_fields:
         groundtruth_N_f = len(groundtruth_fields["PF"])
         field_match = np.full(groundtruth_N_f, -1, "int")
-        for f in range(results["fields"]["n_modes"]):
-            theta = results["fields"]["parameter"]["global"]["theta"][f, 0]
+        for f in range(fields["n_modes"]):
+            theta = fields["parameter"]["global"]["theta"][f, 0]
             # mean[0, self.priors[f"PF{f+1}_theta__mean"]["idx"]]
 
             for f_truth, field in enumerate(groundtruth_fields["PF"]):
@@ -238,7 +240,7 @@ def display_results(
         trial_activation__false_negative = np.zeros((groundtruth_N_f, n_trials), "bool")
         for f in range(groundtruth_N_f):
             if field_match[f] >= 0:
-                active_trials = results["fields"]["active_trials"][f, :] > 0.5
+                active_trials = fields["active_trials"][f, :] > 0.5
                 print(f"{active_trials=}")
                 print(f"groundtruth={groundtruth_activation[field_match[f], :]}")
 
@@ -268,13 +270,13 @@ def display_results(
 
     if not (groundtruth_fields is None):
         print(
-            f"A0: {groundtruth_fields['A0']} vs {results['fields']['parameter']['global']['A0'][0]}"
+            f"A0: {groundtruth_fields['A0']} vs {fields['parameter']['global']['A0'][0]}"
         )
-        for f in range(results["fields"]["n_modes"]):
+        for f in range(fields["n_modes"]):
             if field_match[f] >= 0:
                 for key in ["A", "sigma"]:
                     print(
-                        f"PF{f+1}_{key}: {groundtruth_fields['PF'][field_match[f]][key]} vs {results['fields']['parameter']['global'][key][f,0]}"
+                        f"PF{f+1}_{key}: {groundtruth_fields['PF'][field_match[f]][key]} vs {fields['parameter']['global'][key][f,0]}"
                     )
 
     fig = plt.figure(figsize=(12, 10))
@@ -297,13 +299,13 @@ def display_results(
             ax_activation.axhline(field["theta"], linestyle="--", color="tab:green")
 
     col = ["r", "g"]
-    if results["fields"]["n_modes"] > 0:
-        for f in range(results["fields"]["n_modes"]):
-            active_trials = results["fields"]["active_trials"][f, :] > 0.5
-            theta_local = results["fields"]["parameter"]["local"]["theta"][f, ...]
+    if fields["n_modes"] > 0:
+        for f in range(fields["n_modes"]):
+            active_trials = fields["active_trials"][f, :] > 0.5
+            theta_local = fields["parameter"]["local"]["theta"][f, ...]
 
             ax_activation.axhline(
-                results["fields"]["parameter"]["global"]["theta"][f, 0],
+                fields["parameter"]["global"]["theta"][f, 0],
                 color="k",
                 linestyle="--",
             )
@@ -346,7 +348,7 @@ def display_results(
                     idx_false_negatives,
                     np.full(
                         len(idx_false_negatives),
-                        results["fields"]["parameter"]["global"]["theta"][f, 0],
+                        fields["parameter"]["global"]["theta"][f, 0],
                     ),
                     marker="o",
                     c="tab:orange",
@@ -368,7 +370,7 @@ def display_results(
                     label="false positives" if f == 0 else None,
                 )
             else:
-                idx_active = np.where(results["fields"]["active_trials"][f, :] > 0.5)[0]
+                idx_active = np.where(fields["active_trials"][f, :] > 0.5)[0]
                 ax_activation.scatter(
                     idx_active,
                     theta_local[idx_active, 0],
@@ -380,22 +382,22 @@ def display_results(
                 )
 
             ax_theta.plot(
-                results["fields"]["x"]["theta"][:-1],
-                results["fields"]["p_x"]["global"]["theta"][f, ...],
+                fields["x"]["theta"][:-1],
+                fields["p_x"]["global"]["theta"][f, ...],
                 color=col[f],
             )
             # for i in np.where(active_trials)[0]:
             ax_theta.plot(
-                results["fields"]["x"]["theta"][:-1],
-                results["fields"]["p_x"]["local"]["theta"][f, active_trials, :].T,
+                fields["x"]["theta"][:-1],
+                fields["p_x"]["local"]["theta"][f, active_trials, :].T,
                 color=col[f],
                 linewidth=0.2,
             )
 
             # for i in np.where(~active_trials)[0]:
             ax_theta_inactive.plot(
-                results["fields"]["x"]["theta"][:-1],
-                results["fields"]["p_x"]["local"]["theta"][f, ~active_trials, :].T,
+                fields["x"]["theta"][:-1],
+                fields["p_x"]["local"]["theta"][f, ~active_trials, :].T,
                 color=col[f],
                 linewidth=0.2,
             )
@@ -404,13 +406,13 @@ def display_results(
     # results["fields"]["parameter"]["local"]
     plt.setp(
         ax_activation,
-        xlim=[-1, results["fields"]["parameter"]["local"]["theta"].shape[-2]],
+        xlim=[-1, fields["parameter"]["local"]["theta"].shape[-2]],
         ylim=[0 - 5, nbin + 5],
     )
     plt.setp(ax_theta, xlim=[0, nbin])
     plt.setp(ax_theta_inactive, xlim=[0, nbin])
 
-    x_arr = results["fields"]["x"]["theta"]
+    x_arr = fields["x"]["theta"]
     lw = 2
     # print()
     # fig = plt.figure(figsize=(12, 8))
@@ -435,17 +437,17 @@ def display_results(
         )
         # nrows, ncols, trial + 1 + offset, sharey=ax if trial > 0 else None
         # )
-        ax.plot(results["firingstats"]["trial_map"][trial, :], "k", linewidth=0.5)
-        ax.plot(gauss_filter(results["firingstats"]["trial_map"][trial, :], 1), "k")
+        ax.plot(results["firingstats"]["map_trial_rates"][trial, :], "k", linewidth=0.5)
+        ax.plot(gauss_filter(results["firingstats"]["map_trial_rates"][trial, :], 1), "k")
         ax.set_title(
             f"trial {trial+1}", y=1.0, pad=-14, x=0.3, backgroundcolor="silver"
         )
 
-        if results["fields"]["n_modes"] > 0:
+        if fields["n_modes"] > 0:
 
-            fields = []
+            fields_tmp = []
             fields_label = []
-            active_trials_1 = results["fields"]["active_trials"][0, :] > 0.5
+            active_trials_1 = fields["active_trials"][0, :] > 0.5
             isfield = active_trials_1[trial]
 
             if not comp:
@@ -463,17 +465,17 @@ def display_results(
                 markercolor = None
 
             # if isfield:
-            fields.append(
+            fields_tmp.append(
                 Line2D([], [], color="white", marker="o", markerfacecolor=markercolor)
             )
             fields_label.append("")
 
-            if results["fields"]["n_modes"] > 1:
-                active_trials_2 = results["fields"]["active_trials"][1, :] > 0.5
+            if fields["n_modes"] > 1:
+                active_trials_2 = fields["active_trials"][1, :] > 0.5
                 isfield_2 = active_trials_2[trial]
 
                 if isfield_2:
-                    fields.append(
+                    fields_tmp.append(
                         Line2D(
                             [],
                             [],
@@ -487,7 +489,7 @@ def display_results(
                 isfield_2 = False
 
             ax.legend(
-                fields,
+                fields_tmp,
                 fields_label,
                 numpoints=1,
                 loc=1,
@@ -501,8 +503,8 @@ def display_results(
                     x_arr,
                     get_tuning_curve_trials(
                         x_arr,
-                        results["fields"]["parameter"],
-                        results["fields"]["n_modes"],
+                        fields["parameter"],
+                        fields["n_modes"],
                         None,
                     )[0, trial, :],
                     "r",
@@ -513,8 +515,8 @@ def display_results(
                     x_arr,
                     get_tuning_curve_trials(
                         x_arr,
-                        results["fields"]["parameter"],
-                        results["fields"]["n_modes"],
+                        fields["parameter"],
+                        fields["n_modes"],
                         fields="all",
                     )[0, trial, :],
                     "r",
@@ -526,8 +528,8 @@ def display_results(
                     x_arr,
                     get_tuning_curve_trials(
                         x_arr,
-                        results["fields"]["parameter"],
-                        results["fields"]["n_modes"],
+                        fields["parameter"],
+                        fields["n_modes"],
                         0,
                     )[0, trial, :],
                     "r",
@@ -538,8 +540,8 @@ def display_results(
                     x_arr,
                     get_tuning_curve_trials(
                         x_arr,
-                        results["fields"]["parameter"],
-                        results["fields"]["n_modes"],
+                        fields["parameter"],
+                        fields["n_modes"],
                         1,
                     )[0, trial, :],
                     "r",
@@ -550,8 +552,8 @@ def display_results(
                 x_arr,
                 get_tuning_curve_trials(
                     x_arr,
-                    results["fields"]["parameter"],
-                    results["fields"]["n_modes"],
+                    fields["parameter"],
+                    fields["n_modes"],
                     None,
                 )[0, trial, :],
                 "r",
@@ -565,13 +567,13 @@ def display_results(
             plt.setp(ax.get_xticklabels(), visible=False)
 
     ax_fmap = fig.add_subplot(gs[0, :])
-    ax_fmap.plot(results["firingstats"]["map"], "k-")
+    ax_fmap.plot(results["firingstats"]["map_rates"], "k-")
     ax_fmap.plot(
         x_arr,
         get_tuning_curve_session(
             x_arr,
-            results["fields"]["parameter"],
-            results["fields"]["n_modes"],
+            fields["parameter"],
+            fields["n_modes"],
             "all",
         )[0, :, :].T,
         "r",
@@ -602,8 +604,8 @@ def display_results(
         # for field in groundtruth_fields["PF"]:
         #     ax_fmap.axvline(field["theta"], linestyle="--", color="tab:green")
 
-    A0 = results["fields"]["parameter"]["global"]["A0"][0]
-    A = results["fields"]["parameter"]["global"]["A"][:, 0]
+    A0 = fields["parameter"]["global"]["A0"][0]
+    A = fields["parameter"]["global"]["A"][:, 0]
 
     if np.any(A > 0):
         max_val = max(A0 + A) * 2
