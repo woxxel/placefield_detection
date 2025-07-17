@@ -5,19 +5,21 @@ from scipy.signal import find_peaks,peak_widths
 
 from matplotlib import pyplot as plt
 
-from placefield_detection.utils import prepare_activity, estimate_stats_from_one_sided_process
+from ..utils import prepare_activity, estimate_stats_from_one_sided_process
 
 
 def thresholding_method_single(
     behavior,
     neuron_activity,
     threshold_factor=4,
-    sigma=4,
-    plot=False
+    sigma=2,
+    plot=False,
+    **kwargs
 ):
     """
         method to detect place fields, inspired by XY
     """
+    print("run thresholding method")
     ### calculate (and smooth) firing rate map
 
     activity = prepare_activity(
@@ -32,8 +34,16 @@ def thresholding_method_single(
     #     behavior["dwelltime"],
     #     nbin=behavior["nbin"],
     # )
-    
-    place_fields = {}
+
+    # plt.figure()
+    # plt.plot(activity["map_rates"], label='firing rate map')
+    # plt.xlabel('position bin')
+    # plt.ylabel('firing rate')
+    # plt.title('Firing Rate Map')
+    # plt.legend()
+    # plt.show()
+
+    place_fields = {"is_place_cell": False, "n_modes": 0}
     if np.sum(activity["map_rates"]>0) == 0:
         return place_fields
 
@@ -41,7 +51,7 @@ def thresholding_method_single(
     # print(fmap)
 
     smooth_map = gaussian_filter1d(activity["map_rates"], sigma=sigma, mode = 'wrap')
-    baseline, sd = estimate_stats_from_one_sided_process(smooth_map, baseline_mode="percentile", prctile=50, only_nonzero_entries=False)
+    baseline, sd = estimate_stats_from_one_sided_process(smooth_map, baseline_mode="percentile", prctile=20, only_nonzero_entries=False)
     
     ### thresholding to detect place fields
     threshold = baseline + (threshold_factor*sd)
@@ -89,11 +99,16 @@ def thresholding_method_single(
             # centroids.append(circmean(shifted_map, high=nbin, low=0))
         
         place_fields = {
-            'n_modes': len(centroids),
-            'baseline': baseline,
-            'amplitude': PF_amplitude,
-            'location': centroids,
-            'width': place_field_width,
+            'is_place_cell': True,
+            "fields": {
+                'n_modes': len(centroids),
+                "parameter": {
+                    'baseline': baseline,
+                    'amplitude': PF_amplitude,
+                    'location': centroids,
+                    'width': place_field_width,
+                }
+            }
         } 
 
     if plot:

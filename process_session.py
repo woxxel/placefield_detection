@@ -23,11 +23,11 @@ from .process_single_neuron import process_single_neuron
 
 from .alternative_detection_methods import stability_method
 
-from .HierarchicalBayesInference import (
-    build_inference_results,
-)
+# from .HierarchicalBayesInference import (
+#     build_inference_results,
+# )
 
-from .analyze_results import handover_inference_results
+from .analyze_results import build_results, handover_inference_results
 
 # from utils.utils_analysis import prepare_quantiles
 
@@ -105,11 +105,13 @@ class process_session:
             nP=nP,
         )
 
-        ## handover data from detection (needed? is contained in other data as well)
-        n_processed = self.n_cells if specific_n is None else len(specific_n)
-        for n in range(n_processed):
-            results["status"]["SNR"][n] = neuron_quality["SNR_comp"][n]
-            results["status"]["r_value"][n] = neuron_quality["r_values"][n]
+        # return results
+
+        # ## handover data from detection (needed? is contained in other data as well)
+        # n_processed = self.n_cells if specific_n is None else len(specific_n)
+        # for n in range(n_processed):
+        #     results["status"]["SNR"][n] = neuron_quality["SNR_comp"][n]
+        #     results["status"]["r_value"][n] = neuron_quality["r_values"][n]
 
         if path_results is None:
             return results
@@ -199,16 +201,19 @@ class process_session:
                     f"\t\t\t ------ {n0 + 1} / {n_cells_process} neurons processed\t ------ \t time passed: {(time.time() - t_start):7.2f}s"
                 )
 
-        # print(results_batch)
-        # return results_tmp
         # handover results
-        results = build_inference_results(
-            n_cells_process,
-            N_f=2,
-            nbin=self.parameter.nbin,
-            mode="bayesian",
+        modes = mode_place_cell_detection + mode_place_field_detection
+        unique_modes = list(set(modes))
+
+        # return results_tmp
+
+        results = build_results(
+            n_cells=len(results_tmp),
+            nbin=behavior["nbin"],
             n_trials=behavior["trials"]["ct"],
+            N_f=2,
             hierarchical=["theta"],
+            modes=unique_modes,
         )
 
         for n, res in enumerate(results_tmp):
@@ -217,10 +222,7 @@ class process_session:
                     res, results, n, excluded_keys=["x"]
                 )
 
-        # print(results_batch)
-        results["status"]["is_place_cell"]["stability_method"] = results_batch[
-            "stability"
-        ]
+        results["stability"] = results_batch["stability"]
 
         if path_results is None:
             return results

@@ -479,7 +479,6 @@ def estimate_stats_from_one_sided_process(
     """
 
     # estimate noise level by using median or half-sampling mode method (assuming most entries are not actual spikes)
-
     if only_nonzero_entries:
         data = data[data > 0]
 
