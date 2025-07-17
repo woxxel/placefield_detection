@@ -23,7 +23,7 @@ def prepare_activity(
         neuron_activity, f=f, Ns_thr=1, prctile=20
     )
     # print(activity["spikes"].shape)
-    activity["spikes_original"] = activity["spikes"].copy()
+    activity["spikes_original"] = np.array(activity["spikes"]).copy()
     if only_active:
         activity["spikes"] = activity["spikes"][behavior["active"]]
 

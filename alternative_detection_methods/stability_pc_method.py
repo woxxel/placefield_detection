@@ -76,7 +76,8 @@ def stability_method(
             )[0, 1]
         # print(f"neuron {neuron}, original correlation: {corr_original:.3f}")
         # print(shuffled_corr)
-        p_value[neuron] = 1 - stats.percentileofscore(shuffled_corr, corr_original, kind="rank",nan_policy='omit')/100.
+        # p_value[neuron] = 1 - stats.percentileofscore(shuffled_corr, corr_original, kind="rank",nan_policy='omit')/100.
+        p_value[neuron] = 1 - stats.percentileofscore(shuffled_corr, corr_original, kind="rank")/100.
         is_place_cell[neuron] = p_value[neuron] < 0.05
 
         if plot:

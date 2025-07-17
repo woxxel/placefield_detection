@@ -11,11 +11,11 @@ def prepare_behavior(
     time: np.ndarray,
     only_active: bool = True,
     nbin: int = 100,
-    environment_length: float | None = 120,
+    environment_length = 120,
     f: float = 15.0,
-    T: int | None = None,
+    T = None,
     calculate_performance: bool = False,
-    rw_loc_in: float | None = None,
+    rw_loc_in = None,
     **kwargs
 ):
     """
@@ -185,7 +185,6 @@ def get_trial_data(position, nbin, f, partial_threshold=0.6,**kwargs):
     trials["start"] = np.hstack(
         [0, np.where(np.diff(position) < (-nbin / 2))[0] + 1, position.shape[0]]
     )
-
     if not (position[0] < nbin * (1 - partial_threshold)):
         # print("remove partial first trial @", trials["start"][0])
         trials["start"] = trials["start"][1:]
