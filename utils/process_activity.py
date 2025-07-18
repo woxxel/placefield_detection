@@ -97,14 +97,13 @@ def get_spiking_data(neuron_activity, f=15, Ns_thr=1, prctile=20):
         - array with number of spikes per frame
 
     """
-
     max_burst_rate = 200.0  # spikes per second
     max_spikes_per_frame = max_burst_rate // f
 
     neuron_activity[neuron_activity < neuron_activity.max() * 10 ** (-3)] = 0
     Ns = (neuron_activity > 0).sum()
     if Ns < Ns_thr:
-        return 0, np.NaN, np.zeros_like(neuron_activity)
+        return np.zeros_like(neuron_activity), 0, np.NaN
 
     # trace = neuron_activity[neuron_activity > 0]
 

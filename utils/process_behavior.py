@@ -64,29 +64,31 @@ def prepare_behavior(
         data["position"] = binpos.copy()
         data["velocity"] = velocity.copy()
 
-    data["trials"] = get_trial_data(data["position"], nbin, f, **kwargs)
+    if len(data["position"]) > 0:
+        data["trials"] = get_trial_data(data["position"], nbin, f, **kwargs)
 
-    if only_active:
-        correct_active_from_trials(data["active"], data["trials"])
+        if only_active:
+            ### preparing data for active periods, only
+            correct_active_from_trials(data["active"], data["trials"])
 
-        data["trials"]["start"] -= data["trials"]["start"][0]
+            data["trials"]["start"] -= data["trials"]["start"][0]
 
-        data["time"] = time[data["active"]]
-        data["position"] = binpos[data["active"]]
-        data["velocity"] = velocity[data["active"]]
+            data["time"] = time[data["active"]]
+            data["position"] = binpos[data["active"]]
+            data["velocity"] = velocity[data["active"]]
 
-    ### preparing data for active periods, only
+        data["dwelltime"] = get_dwelltime(data["position"], nbin, f)
+    
+        if calculate_performance and rw_loc_in is not None:
+            rw_pos = rw_loc_in * nbin
+            try:
+                data["performance"] = get_performance(
+                    binpos, velocity, time, rw_pos, 0, nbin, f, **kwargs
+                )
+            except:
+                pass
+    
     data["nFrames"] = len(data["position"])
-    data["dwelltime"] = get_dwelltime(data["position"], nbin, f)
-
-    if calculate_performance and rw_loc_in is not None:
-        rw_pos = rw_loc_in * nbin
-        try:
-            data["performance"] = get_performance(
-                binpos, velocity, time, rw_pos, 0, nbin, f, **kwargs
-            )
-        except:
-            pass
 
     return data
 
