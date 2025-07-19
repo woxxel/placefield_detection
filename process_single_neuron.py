@@ -124,6 +124,7 @@ class process_single_neuron:
             self.place_cell_results["threshold"] = thresholding_method(
                 behavior=self.behavior,
                 neuron_activity=self.activity,
+                N_f=kwargs.get("N_f", 2),
                 **kwargs,
             )
 

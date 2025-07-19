@@ -13,13 +13,13 @@ def thresholding_method_single(
     neuron_activity,
     threshold_factor=4,
     sigma=2,
+    N_f=None,
     plot=False,
     **kwargs
 ):
     """
         method to detect place fields, inspired by XY
     """
-    print("run thresholding method")
     ### calculate (and smooth) firing rate map
 
     activity = prepare_activity(
@@ -62,7 +62,14 @@ def thresholding_method_single(
     PF_amplitude = []
     place_field_width = []
     centroids = []
+    # Only keep the N most prominent peaks (highest amplitude)
+    
+    if N_f is not None and len(field_locations) > N_f:
+        prominences = smooth_map[field_locations]
+        sorted_indices = np.argsort(prominences)[::-1][:N_f]
+        field_locations = [field_locations[i] for i in sorted_indices]
 
+    
     if field_locations:
         PF_amplitude = smooth_map[field_locations].tolist()
 

@@ -161,12 +161,14 @@ def handover_inference_results(
             continue
         
         if isinstance(results_source[key], dict):
+            # print(key, results_source[key].keys())
             results_target[key] = handover_inference_results(
                 results_source[key], results_target[key], idx
             )
         else:
             entry_source = results_source.get(key, None)
-            if not (results_target.get(key,None) is None) and not (results_source[key] is None) and not (results_target[key] is None):                
+            if not (results_target.get(key,None) is None) and not (results_source[key] is None) and not (results_target[key] is None):
+                # print(key, results_source[key])
                 if (np.array(entry_source).size==1) and len(results_target[key].shape) > 1:
                     results_target[key][idx,0] = np.squeeze(results_source[key])
                 else:
