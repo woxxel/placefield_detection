@@ -7,7 +7,7 @@ from functools import partial
 import concurrent.futures
 
 
-from placefield_detection.utils import (
+from ..utils import (
     get_firingmap,
     shift_spikes,
 )

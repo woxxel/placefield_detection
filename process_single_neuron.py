@@ -4,6 +4,7 @@ from .alternative_detection_methods import (
     peak_method,
     information_method,
     stability_method,
+    thresholding_method,
 )
 
 from .utils import prepare_activity
@@ -17,7 +18,7 @@ class process_single_neuron:
     def __init__(
         self,
         behavior,
-        mode_place_cell_detection=["peak", "information", "stability", "bayesian"],
+        mode_place_cell_detection=["peak", "information"],
         mode_place_field_detection=["bayesian", "threshold"],
         **kwargs,
     ):
@@ -39,14 +40,14 @@ class process_single_neuron:
         Run some general functions on activity, such as analysis of firing activity
         """
 
-        # modes = self.mode_place_cell_detection + self.mode_place_field_detection
-        # unique_modes = list(set(modes))
+        modes = self.mode_place_cell_detection + self.mode_place_field_detection
+        unique_modes = list(set(modes))
 
         self.results = build_results(
             n_cells=1,
             nbin=self.behavior["nbin"],
             n_trials=self.behavior["trials"]["ct"],
-            # modes=unique_modes,
+            modes=unique_modes,
         )
 
         self.place_cell_results = {}
@@ -73,12 +74,15 @@ class process_single_neuron:
         #     return None
 
         # t_start = time.time()
+        self.run_preprocessing(activity)
         assert (
             self.preprocessed
         ), "Preprocessing not run. Please run `run_preprocessing` first."
 
-        self.run_preprocessing(activity)
 
+        modes = self.mode_place_cell_detection + self.mode_place_field_detection
+        unique_modes = list(set(modes))
+        
         self.place_cell_detection()
         self.place_field_detection(**kwargs)
 
@@ -86,11 +90,10 @@ class process_single_neuron:
         # results = self.place_cell_results.get(
         #     "bayesian", {"status": {"is_place_cell": {}}}
         # )
-        modes = self.mode_place_cell_detection + self.mode_place_field_detection
-        unique_modes = list(set(modes))
+        
         for method in unique_modes:
-            # if method in self.place_cell_results:
-            self.results[method] = self.place_cell_results[method]
+            if method in self.place_cell_results:
+                self.results[method] = self.place_cell_results[method]
             # else:
             # self.results[method] = {"status": {"is_place_cell": False}}
         # self.results["peak"] = self.place_cell_results["peak"]
@@ -118,6 +121,14 @@ class process_single_neuron:
 
     def place_field_detection(self, **kwargs):
 
+        if "threshold" in self.mode_place_field_detection:
+            self.place_cell_results["threshold"] = thresholding_method(
+                behavior=self.behavior,
+                neuron_activity=self.activity,
+                N_f=kwargs.get("N_f", 2),
+                **kwargs,
+            )
+
         if "bayesian" in self.mode_place_field_detection:
 
             hbm = HierarchicalBayesInference(
@@ -126,7 +137,7 @@ class process_single_neuron:
                 logLevel=logging.ERROR,
             )
 
-            limit_execution_time = kwargs.get("limit_execution_time", 600)
+            limit_execution_time = kwargs.get("limit_execution_time", 1200)
             show_status = kwargs.get("show_status", False)
             hbm.model_comparison(
                 hierarchical=["theta"],

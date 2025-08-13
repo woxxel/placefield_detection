@@ -6,7 +6,7 @@ from scipy import stats
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 
-from placefield_detection.utils import (
+from ..utils import (
     get_firingmap,
     shift_spikes,
 )

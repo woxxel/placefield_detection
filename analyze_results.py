@@ -43,6 +43,7 @@ def build_inference_results(
     results = {}
 
     results["is_place_cell"] = np.zeros(n_cells, dtype=bool)
+    results["p_value"] = np.full(n_cells, np.NaN)
 
     if mode == "bayesian":
 
@@ -56,7 +57,7 @@ def build_inference_results(
             kwargs.get("posterior_arrays", None),
         )
 
-    if mode == "thresholding":
+    if mode == "threshold":
         results["fields"] = build_inference_results__thresholding(n_cells, N_f)
 
     ## if method is called for nCells = 1, collapse data from first dimension
@@ -67,12 +68,12 @@ def build_inference_results(
 def build_inference_results__thresholding(n_cells=1, N_f=0):
 
     fields = {
-        "n_fields": np.zeros(n_cells, dtype=int),
+        "n_modes": np.zeros(n_cells, dtype=int),
         "parameter": {
-            "baseline": np.zeros((n_cells, N_f)),
-            "amplitude": np.zeros((n_cells, N_f)),
-            "location": np.zeros((n_cells, N_f)),
-            "width": np.zeros((n_cells, N_f)),
+            "baseline": np.full(n_cells,np.NaN),
+            "amplitude": np.full((n_cells, N_f),np.NaN),
+            "location": np.full((n_cells, N_f),np.NaN),
+            "width": np.full((n_cells, N_f),np.NaN),
         },
     }
 
@@ -158,15 +159,20 @@ def handover_inference_results(
     for key in results_source.keys():
         if key in excluded_keys:
             continue
-
+        
         if isinstance(results_source[key], dict):
+            # print(key, results_source[key].keys())
             results_target[key] = handover_inference_results(
                 results_source[key], results_target[key], idx
             )
         else:
-            # print(key, results_source[key], results_target[key])
-            if not (results_source[key] is None) and not (results_target[key] is None):
-                results_target[key][idx, ...] = results_source[key]
+            entry_source = results_source.get(key, None)
+            if not (results_target.get(key,None) is None) and not (results_source[key] is None) and not (results_target[key] is None):
+                # print(key, results_source[key])
+                if (np.array(entry_source).size==1) and len(results_target[key].shape) > 1:
+                    results_target[key][idx,0] = np.squeeze(results_source[key])
+                else:
+                    results_target[key][idx, ...] = results_source[key]
 
     return results_target
 
@@ -176,27 +182,32 @@ def extract_inference_results(
 ):
     if results_target is None:
         nbin = 40
-        _, N_f, n_trials, _ = results_source["fields"]["p_x"]["local"]["theta"].shape
-        results_target = build_inference_results(
-            n_cells=1,
-            N_f=N_f,
-            nbin=nbin,
-            mode="bayesian",
-            n_trials=n_trials,
-            hierarchical=["theta"],
-        )
-        # print(results_target["fields"]["parameter"])
+        _, N_f, n_trials, _ = results_source["bayesian"]["fields"]["p_x"]["local"]["theta"].shape
 
+        results_target = build_results(n_cells=1, nbin=nbin, n_trials=n_trials, modes=["bayesian"],N_f=N_f,hierarchical=["theta"])
+        # results_target = build_inference_results(
+        #     n_cells=1,
+        #     N_f=N_f,
+        #     nbin=nbin,
+        #     mode="bayesian",
+        #     n_trials=n_trials,
+        #     hierarchical=["theta"],
+        # )
+        # print(results_target["fields"]["parameter"])
     for key in results_source.keys():
         if key in excluded_keys:
             continue
-
+        
         if isinstance(results_source[key], dict):
+            # print(results_source[key].keys())
+            if results_target.get(key, None) is None:
+                results_target[key] = {}
             results_target[key] = extract_inference_results(
                 results_source[key], idx, results_target[key]
             )
         else:
-            if not (results_source[key] is None) and not (results_target[key] is None):
+            if not (results_source.get(key,None) is None) and not (results_target.get(key,None) is None):
+                # print("entries:",results_source[key][idx,...], results_target.get(key))
                 results_target[key] = results_source[key][idx, ...]
 
     return results_target
@@ -212,6 +223,9 @@ def display_results(
     if not (idx is None):
         results = extract_inference_results(results, idx)
     
+    # print(results.keys())
+    # print(results)
+
     fields = results["bayesian"]["fields"]
     n_trials, nsteps = fields["p_x"]["local"]["theta"].shape[-2:]
     nbin = 40

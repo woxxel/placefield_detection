@@ -11,11 +11,11 @@ def prepare_behavior(
     time: np.ndarray,
     only_active: bool = True,
     nbin: int = 100,
-    environment_length: float | None = 120,
+    environment_length = 120,
     f: float = 15.0,
-    T: int | None = None,
+    T = None,
     calculate_performance: bool = False,
-    rw_loc_in: float | None = None,
+    rw_loc_in = None,
     **kwargs
 ):
     """
@@ -64,29 +64,31 @@ def prepare_behavior(
         data["position"] = binpos.copy()
         data["velocity"] = velocity.copy()
 
-    data["trials"] = get_trial_data(data["position"], nbin, f, **kwargs)
+    if len(data["position"]) > 0:
+        data["trials"] = get_trial_data(data["position"], nbin, f, **kwargs)
 
-    if only_active:
-        correct_active_from_trials(data["active"], data["trials"])
+        if only_active:
+            ### preparing data for active periods, only
+            correct_active_from_trials(data["active"], data["trials"])
 
-        data["trials"]["start"] -= data["trials"]["start"][0]
+            data["trials"]["start"] -= data["trials"]["start"][0]
 
-        data["time"] = time[data["active"]]
-        data["position"] = binpos[data["active"]]
-        data["velocity"] = velocity[data["active"]]
+            data["time"] = time[data["active"]]
+            data["position"] = binpos[data["active"]]
+            data["velocity"] = velocity[data["active"]]
 
-    ### preparing data for active periods, only
+        data["dwelltime"] = get_dwelltime(data["position"], nbin, f)
+    
+        if calculate_performance and rw_loc_in is not None:
+            rw_pos = rw_loc_in * nbin
+            try:
+                data["performance"] = get_performance(
+                    binpos, velocity, time, rw_pos, 0, nbin, f, **kwargs
+                )
+            except:
+                pass
+    
     data["nFrames"] = len(data["position"])
-    data["dwelltime"] = get_dwelltime(data["position"], nbin, f)
-
-    if calculate_performance and rw_loc_in is not None:
-        rw_pos = rw_loc_in * nbin
-        try:
-            data["performance"] = get_performance(
-                binpos, velocity, time, rw_pos, 0, nbin, f, **kwargs
-            )
-        except:
-            pass
 
     return data
 
@@ -185,7 +187,6 @@ def get_trial_data(position, nbin, f, partial_threshold=0.6,**kwargs):
     trials["start"] = np.hstack(
         [0, np.where(np.diff(position) < (-nbin / 2))[0] + 1, position.shape[0]]
     )
-
     if not (position[0] < nbin * (1 - partial_threshold)):
         # print("remove partial first trial @", trials["start"][0])
         trials["start"] = trials["start"][1:]

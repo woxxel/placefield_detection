@@ -119,7 +119,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                         "function": lambda x, stretch: x * stretch,
                     },
                     "sigma": {
-                        "params": {"loc": 0, "scale": 2},
+                        "params": {"loc": 0, "scale": 1.5},
                         "function": halfnorm_ppf,
                     },
                 }
@@ -513,6 +513,12 @@ class HierarchicalBayesInference(HierarchicalModel):
             reliability = active_trials / self.nSamples
             reliability_sigmoid = 1 - 1 / (1 + np.exp(-20 * (reliability - 0.3)))
             reliability_penalty = (reliability_sigmoid * dlogp).sum(axis=0)
+
+            ## this is temporarily introduced - needs to be checked thoroughly!
+            reliability_penalty += (np.maximum(4-active_trials,0)/3 *dlogp).sum(axis=0)
+
+
+
             # print(f"{reliability=}, {reliability_penalty=}")
             # print(f"{reliability*dlogp}")
             # reliability_penalty = penalty_factor * ((reliability>0) * (1. + (1.-reliability))).sum(axis=0)
