@@ -39,14 +39,14 @@ class process_single_neuron:
         Run some general functions on activity, such as analysis of firing activity
         """
 
-        modes = self.mode_place_cell_detection + self.mode_place_field_detection
-        unique_modes = list(set(modes))
+        # modes = self.mode_place_cell_detection + self.mode_place_field_detection
+        # unique_modes = list(set(modes))
 
         self.results = build_results(
             n_cells=1,
             nbin=self.behavior["nbin"],
             n_trials=self.behavior["trials"]["ct"],
-            modes=unique_modes,
+            # modes=unique_modes,
         )
 
         self.place_cell_results = {}
@@ -86,7 +86,9 @@ class process_single_neuron:
         # results = self.place_cell_results.get(
         #     "bayesian", {"status": {"is_place_cell": {}}}
         # )
-        for method in self.mode_place_cell_detection:
+        modes = self.mode_place_cell_detection + self.mode_place_field_detection
+        unique_modes = list(set(modes))
+        for method in unique_modes:
             # if method in self.place_cell_results:
             self.results[method] = self.place_cell_results[method]
             # else:
