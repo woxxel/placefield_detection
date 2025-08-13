@@ -40,13 +40,14 @@ class process_single_neuron:
         Run some general functions on activity, such as analysis of firing activity
         """
 
-        
+        modes = self.mode_place_cell_detection + self.mode_place_field_detection
+        unique_modes = list(set(modes))
 
         self.results = build_results(
             n_cells=1,
             nbin=self.behavior["nbin"],
             n_trials=self.behavior["trials"]["ct"],
-            # modes=unique_modes,
+            modes=unique_modes,
         )
 
         self.place_cell_results = {}
