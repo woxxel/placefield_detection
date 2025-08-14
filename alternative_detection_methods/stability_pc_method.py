@@ -26,6 +26,9 @@ def stability_method(
     n_neurons_total, T = neuron_activity.shape
     n_neurons = n_neurons_total if neurons is None else len(neurons)
     neurons = range(n_neurons) if neurons is None else list(neurons)
+
+    print(n_neurons_total, "neurons in total")
+    print(n_neurons, "neurons to be processed")
     
     nbin = behavior['dwelltime'].shape[0]
     
@@ -53,7 +56,7 @@ def stability_method(
     p_value = np.full(n_neurons,np.NaN)
     n_shuffles = 100
 
-    for neuron in tqdm.tqdm(neurons):
+    for neuron_idx,neuron in tqdm.tqdm(enumerate(neurons)):
         # print(half_fmaps[neuron, 0, :])
         # print(half_fmaps[neuron, 1, :])
         # if half_fmaps[neuron, 0, :].sum()==0 or half_fmaps[neuron, 1, :].sum()==0:
@@ -77,8 +80,8 @@ def stability_method(
         # print(f"neuron {neuron}, original correlation: {corr_original:.3f}")
         # print(shuffled_corr)
         # p_value[neuron] = 1 - stats.percentileofscore(shuffled_corr, corr_original, kind="rank",nan_policy='omit')/100.
-        p_value[neuron] = 1 - stats.percentileofscore(shuffled_corr, corr_original, kind="rank")/100.
-        is_place_cell[neuron] = p_value[neuron] < 0.05
+        p_value[neuron_idx] = 1 - stats.percentileofscore(shuffled_corr, corr_original, kind="rank")/100.
+        is_place_cell[neuron_idx] = p_value[neuron_idx] < 0.05
 
         if plot:
             ax.hist(shuffled_corr, bins=21, alpha=0.6)

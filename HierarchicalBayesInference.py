@@ -3,6 +3,7 @@ import numpy as np
 from scipy.special import factorial as sp_factorial, erfinv, erf
 from scipy.ndimage import gaussian_filter1d as gauss_filter
 from scipy.interpolate import interp1d
+from scipy.stats import chi2
 
 import ultranest
 from ultranest.popstepsampler import (
@@ -627,10 +628,19 @@ class HierarchicalBayesInference(HierarchicalModel):
                     self.inference_results["fields"]["logz"][f, 1] = sampling_results[
                         "logzerr"
                     ]
-                    if previous_logz > sampling_results["logz"]:
+
+                    ## 3 degrees of freedom, as statistic depends on difference of dof between models
+                    if chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3) > 0.05:
+                    # if previous_logz > sampling_results["logz"]:
+                        print("chi statistic is not significant, stopping inference")
+                        print(
+                            f"previous logz: {previous_logz:.2f}, current logz: {sampling_results['logz']:.2f}"
+                        )
+                        print("chi2:",chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3))
                         self.N_f = f - 1
                         break
-
+                    
+                    self.inference_results["fields"]["n_modes"] = self.N_f
                     self.store_inference_results(sampling_results)
                     previous_logz = sampling_results["logz"]
                 except Exception as exc:
@@ -658,19 +668,19 @@ class HierarchicalBayesInference(HierarchicalModel):
     def calculate_general_statistics(self, which=["fields", "firingstats"]):
 
         if "fields" in which:
-            ## number of fields of best model
-            if np.all(np.isnan(self.inference_results["fields"]["logz"][:, 0])):
-                field_model = -1
-            else:
-                field_model = np.nanargmax(
-                    self.inference_results["fields"]["logz"][:, 0]
-                )
-                self.inference_results["fields"]["n_modes"] = field_model
+            # ## number of fields of best model
+            # if np.all(np.isnan(self.inference_results["fields"]["logz"][:, 0])):
+            #     field_model = -1
+            # else:
+            #     field_model = np.nanargmax(
+            #         self.inference_results["fields"]["logz"][:, 0]
+            #     )
+            #     self.inference_results["fields"]["n_modes"] = field_model
 
-            self.inference_results["is_place_cell"] = field_model > 0
+            self.inference_results["is_place_cell"] = self.inference_results["fields"]["n_modes"] > 0
 
             ## reliability of place fields
-            for f in range(field_model):
+            for f in range(self.inference_results["fields"]["n_modes"]):
                 self.inference_results["fields"]["reliability"][f] = (
                     self.inference_results["fields"]["active_trials"][f, ...] > 0.5
                 ).sum() / self.nSamples
