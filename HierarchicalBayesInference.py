@@ -630,7 +630,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                     ]
 
                     ## 3 degrees of freedom, as statistic depends on difference of dof between models
-                    if chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3) > 0.05:
+                    if chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3) > 0.01:
                     # if previous_logz > sampling_results["logz"]:
                         print("chi statistic is not significant, stopping inference")
                         print(
