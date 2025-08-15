@@ -518,8 +518,6 @@ class HierarchicalBayesInference(HierarchicalModel):
             ## this is temporarily introduced - needs to be checked thoroughly!
             reliability_penalty += (np.maximum(4-active_trials,0)/3 *dlogp).sum(axis=0)
 
-
-
             # print(f"{reliability=}, {reliability_penalty=}")
             # print(f"{reliability*dlogp}")
             # reliability_penalty = penalty_factor * ((reliability>0) * (1. + (1.-reliability))).sum(axis=0)
@@ -631,15 +629,15 @@ class HierarchicalBayesInference(HierarchicalModel):
 
                     ## 3 degrees of freedom, as statistic depends on difference of dof between models
                     if chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3) > 0.01:
-                    # if previous_logz > sampling_results["logz"]:
-                        print("chi statistic is not significant, stopping inference")
-                        print(
-                            f"previous logz: {previous_logz:.2f}, current logz: {sampling_results['logz']:.2f}"
-                        )
-                        print("chi2:",chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3))
+                        # if previous_logz > sampling_results["logz"]:
+                        # print("chi statistic is not significant, stopping inference")
+                        # print(
+                        #     f"previous logz: {previous_logz:.2f}, current logz: {sampling_results['logz']:.2f}"
+                        # )
+                        # print("chi2:",chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3))
                         self.N_f = f - 1
                         break
-                    
+
                     self.inference_results["fields"]["n_modes"] = self.N_f
                     self.store_inference_results(sampling_results)
                     previous_logz = sampling_results["logz"]

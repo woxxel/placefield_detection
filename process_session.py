@@ -115,9 +115,9 @@ class process_session:
 
         if path_results is None:
             return results
-        # else:
-        #     print(f"store results as {path_results}")
-        #     save_data(results, path_results)
+        else:
+            print(f"store results as {path_results}")
+            save_data(results, path_results)
 
     def from_input(
         self,
@@ -136,7 +136,10 @@ class process_session:
         Input parameters:
 
         """
+        ## only needed for plot functions, etc (clean up!)
+        self.behavior = behavior
 
+        ## from here, real code starts
         self.n_cells = neuron_activity.shape[0]
 
         t_start = time.time()
@@ -468,101 +471,101 @@ class process_session:
 
     # self.neuron_activity['S_active'] = S[:,self.behavior['active']]
 
-    def calc_Icorr(self, S, trials_S):
+    # def calc_Icorr(self, S, trials_S):
 
-        S /= S[S > 0].mean()
-        lag = [0, self.para["f"] * 2]
-        nlag = lag[1] - lag[0]
-        T = S.shape[0]
+    #     S /= S[S > 0].mean()
+    #     lag = [0, self.para["f"] * 2]
+    #     nlag = lag[1] - lag[0]
+    #     T = S.shape[0]
 
-        print("check if range is properly covered in C_cross (and PSTH)")
-        print(
-            "speed, speed, speed!! - what can be vectorized? how to get rid of loops?"
-        )
-        print("spike train generation: generate a single, long one at once (or smth)")
-        print(
-            "how to properly generate surrogate data? single trials? conjoint trials? if i put in a rate only, sums will even out to homogenous process for N large"
-        )
+    #     print("check if range is properly covered in C_cross (and PSTH)")
+    #     print(
+    #         "speed, speed, speed!! - what can be vectorized? how to get rid of loops?"
+    #     )
+    #     print("spike train generation: generate a single, long one at once (or smth)")
+    #     print(
+    #         "how to properly generate surrogate data? single trials? conjoint trials? if i put in a rate only, sums will even out to homogenous process for N large"
+    #     )
 
-        PSTH = np.zeros((self.para["nbin"], nlag))
-        C_cross = np.zeros((self.para["nbin"], nlag))
-        for x in range(self.para["nbin"]):
-            for t in range(self.behavior["trials"]["ct"]):
-                idx_x = np.where(self.behavior["trials"]["trial"][t]["binpos"] == x)[0]
-                # print(idx_x)
-                if len(idx_x):
-                    i = (
-                        self.behavior["trials"]["frame"][t] + idx_x[0]
-                    )  ## find entry to position x in trial t
-                    # print('first occurence of x=%d in trial %d (start: %d) at frame %d'%(x,t,self.behavior['trials']['frame'][t],i))
-                    PSTH[x, : min(nlag, T - (i + lag[0]))] += S[
-                        i + lag[0] : min(T, i + lag[1])
-                    ]
-            for i in range(1, nlag):
-                C_cross[x, i] = np.corrcoef(PSTH[x, :-i], PSTH[x, i:])[0, 1]
-            C_cross[np.isnan(C_cross)] = 0
-            # C_cross[x,:] = np.fft.fft(C_cross[x,:])
-        # PSTH /= nlag/self.para['f']*self.behavior['trials']['ct']
-        fC_cross = np.fft.fft(C_cross)
+    #     PSTH = np.zeros((self.para["nbin"], nlag))
+    #     C_cross = np.zeros((self.para["nbin"], nlag))
+    #     for x in range(self.para["nbin"]):
+    #         for t in range(self.behavior["trials"]["ct"]):
+    #             idx_x = np.where(self.behavior["trials"]["trial"][t]["binpos"] == x)[0]
+    #             # print(idx_x)
+    #             if len(idx_x):
+    #                 i = (
+    #                     self.behavior["trials"]["frame"][t] + idx_x[0]
+    #                 )  ## find entry to position x in trial t
+    #                 # print('first occurence of x=%d in trial %d (start: %d) at frame %d'%(x,t,self.behavior['trials']['frame'][t],i))
+    #                 PSTH[x, : min(nlag, T - (i + lag[0]))] += S[
+    #                     i + lag[0] : min(T, i + lag[1])
+    #                 ]
+    #         for i in range(1, nlag):
+    #             C_cross[x, i] = np.corrcoef(PSTH[x, :-i], PSTH[x, i:])[0, 1]
+    #         C_cross[np.isnan(C_cross)] = 0
+    #         # C_cross[x,:] = np.fft.fft(C_cross[x,:])
+    #     # PSTH /= nlag/self.para['f']*self.behavior['trials']['ct']
+    #     fC_cross = np.fft.fft(C_cross)
 
-        rate = PSTH.sum(1) / (nlag * self.behavior["trials"]["ct"])
-        # print(rate)
+    #     rate = PSTH.sum(1) / (nlag * self.behavior["trials"]["ct"])
+    #     # print(rate)
 
-        Icorr = np.zeros(self.para["nbin"])
-        Icorr_art = np.zeros(self.para["nbin"])
-        Icorr_art_std = np.zeros(self.para["nbin"])
+    #     Icorr = np.zeros(self.para["nbin"])
+    #     Icorr_art = np.zeros(self.para["nbin"])
+    #     Icorr_art_std = np.zeros(self.para["nbin"])
 
-        for x in range(self.para["nbin"]):
-            print(x)
-            Icorr[x] = (
-                -1
-                / 2
-                * rate[x]
-                * np.log2(1 - fC_cross[x, :] / (rate[x] + fC_cross[x, :])).sum()
-            )
-            Icorr_art[x], Icorr_art_std[x] = self.calc_Icorr_data(rate[x], nlag)
+    #     for x in range(self.para["nbin"]):
+    #         print(x)
+    #         Icorr[x] = (
+    #             -1
+    #             / 2
+    #             * rate[x]
+    #             * np.log2(1 - fC_cross[x, :] / (rate[x] + fC_cross[x, :])).sum()
+    #         )
+    #         Icorr_art[x], Icorr_art_std[x] = self.calc_Icorr_data(rate[x], nlag)
 
-        plt.figure()
-        plt.plot(Icorr)
-        plt.errorbar(range(self.para["nbin"]), Icorr_art, yerr=Icorr_art_std)
-        # plt.plot(Icorr_art,'r')
-        plt.show(block=False)
+    #     plt.figure()
+    #     plt.plot(Icorr)
+    #     plt.errorbar(range(self.para["nbin"]), Icorr_art, yerr=Icorr_art_std)
+    #     # plt.plot(Icorr_art,'r')
+    #     plt.show(block=False)
 
-        return PSTH, C_cross, Icorr
+    #     return PSTH, C_cross, Icorr
 
-    # self.behavior['trials']['frame'][t]
+    # # self.behavior['trials']['frame'][t]
 
-    def calc_Icorr_data(self, rate, T, N_bs=10):
+    # def calc_Icorr_data(self, rate, T, N_bs=10):
 
-        t = np.linspace(0, T - 1, T)
-        Icorr = np.zeros(N_bs)
+    #     t = np.linspace(0, T - 1, T)
+    #     Icorr = np.zeros(N_bs)
 
-        nGen = int(math.ceil(1.1 * T * rate))
-        u = np.random.rand(
-            N_bs, nGen
-        )  ## generate random variables to cover the whole time
-        t_AP = np.cumsum(
-            -(1 / rate) * np.log(u), 1
-        )  ## generate points of homogeneous pp
-        # print(t_AP)
-        for L in range(N_bs):
-            t_AP_now = t_AP[L, t_AP[L, :] < T]
-            idx_AP = np.argmin(np.abs(t_AP_now[:, np.newaxis] - t[np.newaxis, :]), 1)
+    #     nGen = int(math.ceil(1.1 * T * rate))
+    #     u = np.random.rand(
+    #         N_bs, nGen
+    #     )  ## generate random variables to cover the whole time
+    #     t_AP = np.cumsum(
+    #         -(1 / rate) * np.log(u), 1
+    #     )  ## generate points of homogeneous pp
+    #     # print(t_AP)
+    #     for L in range(N_bs):
+    #         t_AP_now = t_AP[L, t_AP[L, :] < T]
+    #         idx_AP = np.argmin(np.abs(t_AP_now[:, np.newaxis] - t[np.newaxis, :]), 1)
 
-            PSTH = np.zeros(T)
-            for AP in idx_AP:
-                PSTH[AP] += 1
+    #         PSTH = np.zeros(T)
+    #         for AP in idx_AP:
+    #             PSTH[AP] += 1
 
-            # C_cross = np.correlate(PSTH,PSTH)
-            # print(C_cross)
-            C_cross = np.zeros(T)
-            for i in range(1, T):
-                C_cross[i] = np.corrcoef(PSTH[:-i], PSTH[i:])[0, 1]
-            C_cross[np.isnan(C_cross)] = 0
-            fC_cross = np.fft.fft(C_cross)
-            Icorr[L] = -1 / 2 * rate * np.log2(1 - fC_cross / (rate + fC_cross)).sum()
+    #         # C_cross = np.correlate(PSTH,PSTH)
+    #         # print(C_cross)
+    #         C_cross = np.zeros(T)
+    #         for i in range(1, T):
+    #             C_cross[i] = np.corrcoef(PSTH[:-i], PSTH[i:])[0, 1]
+    #         C_cross[np.isnan(C_cross)] = 0
+    #         fC_cross = np.fft.fft(C_cross)
+    #         Icorr[L] = -1 / 2 * rate * np.log2(1 - fC_cross / (rate + fC_cross)).sum()
 
-        return Icorr.mean(), Icorr.std()
+    #     return Icorr.mean(), Icorr.std()
 
     def plt_data(
         self,
@@ -621,15 +624,15 @@ class process_session:
 
         fig = plt.figure(figsize=(7, 3), dpi=150)
         if ground_truth is None:
-            ax_Ca = plt.axes([0.1, 0.7, 0.6, 0.25])
-            ax_dwell = plt.axes([0.7, 0.9, 0.2, 0.075])
-            ax_loc = plt.axes([0.1, 0.1, 0.6, 0.6])
-            ax1 = plt.axes([0.7, 0.1, 0.25, 0.5])
+            ax_Ca = plt.axes((0.1, 0.7, 0.6, 0.25))
+            ax_dwell = plt.axes((0.7, 0.9, 0.2, 0.075))
+            ax_loc = plt.axes((0.1, 0.1, 0.6, 0.6))
+            ax1 = plt.axes((0.7, 0.1, 0.25, 0.5))
         else:
-            ax_Ca = plt.axes([0.125, 0.75, 0.7, 0.225])
-            ax_trial_act = plt.axes([0.125, 0.65, 0.7, 0.1])
-            ax_loc = plt.axes([0.125, 0.15, 0.7, 0.5])
-            ax1 = plt.axes([0.825, 0.15, 0.15, 0.5])
+            ax_Ca = plt.axes((0.125, 0.75, 0.7, 0.225))
+            ax_trial_act = plt.axes((0.125, 0.65, 0.7, 0.1))
+            ax_loc = plt.axes((0.125, 0.15, 0.7, 0.5))
+            ax1 = plt.axes((0.825, 0.15, 0.15, 0.5))
         # ax2 = plt.axes([0.6,0.275,0.35,0.175])
         # ax3 = plt.axes([0.1,0.08,0.4,0.25])
         # ax4 = plt.axes([0.6,0.08,0.35,0.175])
@@ -839,10 +842,10 @@ class process_session:
         n_trial = 4
 
         fig = plt.figure(figsize=(7, 5), dpi=150)
-        ax_Ca = plt.axes([0.1, 0.7, 0.7, 0.25])
+        ax_Ca = plt.axes((0.1, 0.7, 0.7, 0.25))
         # add_number(fig,ax_Ca,order=1)
-        ax_loc = plt.axes([0.1, 0.15, 0.7, 0.55])
-        ax1 = plt.axes([0.8, 0.15, 0.175, 0.55])
+        ax_loc = plt.axes((0.1, 0.15, 0.7, 0.55))
+        ax1 = plt.axes((0.8, 0.15, 0.175, 0.55))
 
         time = self.behavior["time_raw"]
         C = self.neuron_activity["C"][n, :]
