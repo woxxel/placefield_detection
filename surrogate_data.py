@@ -60,7 +60,7 @@ class SurrogateData:
 
             # self.intensity_model = intensity_model
 
-            self.activity = np.zeros((nCells, len(behavior["time_raw"])))
+            self.activity = np.zeros((nCells, len(behavior["time_original"])))
             self.field_activation = np.zeros(
                 (nCells, n_fields, behavior["trials"]["ct"]),
                 "bool",
@@ -80,14 +80,14 @@ class SurrogateData:
 
         self.behavior = {
             "active": behavior["active"],
-            "position": behavior["binpos_raw"],
-            "time": behavior["time_raw"],
-            "T": behavior["time_raw"][-1],
+            "position": behavior["position_original"],
+            "time": behavior["time_original"],
+            "T": behavior["time_original"][-1],
             "trial_ct": behavior["trials"]["ct"],
             "trial_start": np.hstack(
                 [
                     np.where(behavior["active"])[0][behavior["trials"]["start"][:-1]],
-                    len(behavior["time_raw"]),
+                    len(behavior["time_original"]),
                 ]
             ),
             "nbin": self.nbin,
