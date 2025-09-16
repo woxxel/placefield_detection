@@ -10,7 +10,7 @@ from .alternative_detection_methods import (
 from .utils import prepare_activity
 from .analyze_results import build_results
 
-from .HierarchicalBayesInference import HierarchicalBayesInference
+from .BayesModel import HierarchicalBayesInference
 
 
 class process_single_neuron:

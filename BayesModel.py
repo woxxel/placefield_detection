@@ -5,14 +5,11 @@ from scipy.ndimage import gaussian_filter1d as gauss_filter
 from scipy.interpolate import interp1d
 from scipy.stats import chi2
 
-import ultranest
-from ultranest.popstepsampler import (
-    PopulationSliceSampler,
-    generate_region_oriented_direction,
-)
-from ultranest.mlfriends import RobustEllipsoidRegion
+from dataclasses import dataclass, fields as attributes
 
-from .HierarchicalModelDefinition import HierarchicalModel
+from .HierarchicalBayesModel import HierarchicalModel
+from .HierarchicalBayesModel.structures import build_distr_structure_from_params, build_key, prior_structure, halfnorm_ppf, norm_ppf, bounded_flat, parse_name_and_indices
+
 from .utils import circmean as weighted_circmean, model_of_tuning_curve
 from .analyze_results import build_inference_results
 
@@ -26,196 +23,77 @@ logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.WARNING)
 
 
-class HierarchicalBayesInference(HierarchicalModel):
+class HierarchicalBayesInference(HierarchicalModel):    
+    
+    def prepare_data(self, event_counts, T, dimension_names=None, iter_dims=None):
 
-    def __init__(self, N, dwelltime, logLevel=logging.ERROR):
+        super().prepare_data(event_counts, T, dimension_names, iter_dims)
+        # self.N = N[np.newaxis, ...]
 
-        self.N = N[np.newaxis, ...]
-        self.dwelltime = dwelltime[np.newaxis, ...]
-        self.nSamples, self.nbin = N.shape
-        self.x_arr = np.arange(self.nbin)[np.newaxis, np.newaxis, :]
+        self.n_samples, self.n_bin = self.dimensions["shape"][-2:]
+        
 
-        self.firing_map = N.sum(axis=0) / dwelltime.sum(axis=0)
+        self.x_arr = np.broadcast_to(np.arange(self.n_bin),(1,)*self.dimensions["n"]+(self.n_bin,))
 
         ## pre-calculate log-factorial for speedup
-        self.log_N_factorial = np.log(sp_factorial(self.N))
+        self.log_N_factorial = np.log(sp_factorial(self.data["event_counts"]))
 
-        self.log = logging.getLogger("nestLogger")
-        self.log.setLevel(logLevel)
 
-    def set_priors(self, priors_init=None, hierarchical_in=[], wrap=[], **kwargs):
+    def set_priors(self, priors_init=None, N_f=1):
 
-        halfnorm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(x)
-        norm_ppf = lambda x, loc, scale: loc + scale * np.sqrt(2) * erfinv(2 * x - 1)
-
-        self.N_f = kwargs.get("N_f", 1)
-
+        self.N_f = N_f
         if priors_init is None:
 
-            A0_guess, A_guess = np.percentile(
-                self.firing_map[self.firing_map > 0], [10, 90]
+            firing_map = self.data["event_counts"].sum(axis=0) / self.data["T"].sum(axis=0)
+            A0_guess, A_guess = np.maximum(np.percentile(
+                firing_map, [10, 90]
+            ), 0.1)
+
+            self.n_bin
+
+            self.priors_init = {}
+            self.priors_init["A0"] = prior_structure(
+                halfnorm_ppf,
+                loc=0.0,
+                scale=A0_guess,
+                label="$A_0$",
             )
+
+            for f in range(N_f):
+
+                self.priors_init[build_key("A", "field", f)] = prior_structure(
+                    halfnorm_ppf,
+                    loc=0.0,
+                    scale=A_guess,
+                    label=f"$A_{f}$",
+                )
+                self.priors_init[build_key("sigma", "field", f)] = prior_structure(
+                    halfnorm_ppf,
+                    loc=0.5,
+                    scale=self.n_bin / 10.0,
+                    label=f"$\\sigma_{f}$",
+                )
+                self.priors_init[build_key("theta", "field", f)] = prior_structure(
+                    norm_ppf,
+                    mean=prior_structure(bounded_flat, low=0, high=self.n_bin),
+                    sigma=prior_structure(halfnorm_ppf, loc=0, scale=self.n_bin / 20.0),
+                    label=f"$\\theta_{f}$",
+                    shape=(self.n_samples,)
+                )
 
             # assert (
             #     A0_guess > 5
             # ), "Initial guess for A0is too high (above 5 Hz), which has been found to cause problems in the past (ultra-long run time). Execution is stopped to prevent this."
 
-            self.priors_init = {
-                "A0": {
-                    "hierarchical": {
-                        "params": {"loc": "mean", "scale": "sigma"},
-                        "function": norm_ppf,
-                    },
-                    "mean": {
-                        # 'params':       {'loc':0., 'scale':50},
-                        "params": {"loc": 0.0, "scale": A0_guess},
-                        "function": halfnorm_ppf,
-                    },
-                    "sigma": {
-                        "params": {"loc": 0.0, "scale": A0_guess / 10.0},
-                        "function": halfnorm_ppf,
-                    },
-                },
-            }
-
-            for f in range(1, self.N_f + 1):
-
-                self.priors_init[f"PF{f}_A"] = {
-                    # maybe get rid of this parameter and just choose the best fitting height for each trial?!
-                    "hierarchical": {
-                        "params": {"loc": "mean", "scale": "sigma"},
-                        "function": norm_ppf,
-                    },
-                    "mean": {
-                        # 'params':       {'loc':0, 'scale':100},
-                        "params": {"loc": 0, "scale": A_guess},
-                        "function": halfnorm_ppf,
-                    },
-                    "sigma": {
-                        "params": {"loc": 0.0, "scale": A_guess / 10.0},
-                        "function": halfnorm_ppf,
-                    },
-                }
-                self.priors_init[f"PF{f}_sigma"] = {
-                    "hierarchical": {
-                        "params": {"loc": "mean", "scale": "sigma"},
-                        "function": norm_ppf,
-                    },
-                    "mean": {
-                        "params": {"loc": 0.5, "scale": 2},
-                        "function": halfnorm_ppf,
-                    },
-                    "sigma": {
-                        "params": {"loc": 0.0, "scale": 2.0},
-                        "function": halfnorm_ppf,
-                    },
-                }
-                self.priors_init[f"PF{f}_theta"] = {
-                    "hierarchical": {
-                        "params": {"loc": "mean", "scale": "sigma"},
-                        "function": norm_ppf,
-                    },
-                    "mean": {
-                        "params": {"stretch": self.nbin},
-                        "function": lambda x, stretch: x * stretch,
-                    },
-                    "sigma": {
-                        "params": {"loc": 0, "scale": 1.5},
-                        "function": halfnorm_ppf,
-                    },
-                }
-
         else:
             self.priors_init = priors_init
 
-        self.hierarchical = hierarchical_in
+        super().set_priors(self.priors_init)
 
-        hierarchical = []
-        for f in range(1, self.N_f + 1):
-            for h in hierarchical_in:
-                hierarchical.append(f"PF{f}_{h}")
 
-        super().set_priors(self.priors_init, hierarchical, wrap)
-
-    def model_of_tuning_curve(
-        self,
-        params,
-        fields="all",
-        stacked=False,
-        # int | str | None
-    ):
-
-        return model_of_tuning_curve(
-            self.x_arr, params, self.nbin, self.nSamples, fields, stacked
-        )
-
-    def from_p_to_params(self, p_in):
-        """
-        transform p_in to parameters for the model
-        """
-        params = {}
-
-        if self.N_f > 0:
-            params["PF"] = []
-            for _ in range(self.N_f):
-                params["PF"].append({})
-
-        for key in self.priors:
-            if self.priors[key]["meta"]:
-                continue
-
-            if key.startswith("PF"):
-                nField, key_param = key.split("_")
-                nField = int(nField[2:]) - 1
-                params["PF"][nField][key_param] = p_in[
-                    :,
-                    self.priors[key]["idx"] : self.priors[key]["idx"]
-                    + self.priors[key]["n"],
-                ]
-            else:
-                key_param = key.split("__")[0]
-                params[key_param] = p_in[
-                    :,
-                    self.priors[key]["idx"] : self.priors[key]["idx"]
-                    + self.priors[key]["n"],
-                ]
-
-        return params
-
-    def from_results_to_params(self, results=None):
-        """
-        transform results to parameters for the model
-        """
-        results = results or self.inference_results
-        params = {}
-
-        if self.N_f > 0:
-            params["PF"] = []
-            for _ in range(self.N_f):
-                params["PF"].append({})
-
-        params["A0"] = results["fields"]["parameter"]["global"]["A0"][np.newaxis, 0]
-        for key in ["theta", "A", "sigma"]:
-            for f in range(self.N_f):
-                if results["fields"]["parameter"]["local"][key] is None:
-                    params["PF"][f][key] = results["fields"]["parameter"]["global"][
-                        key
-                    ][np.newaxis, f, 0]
-                else:
-                    params["PF"][f][key] = results["fields"]["parameter"]["local"][key][
-                        np.newaxis, f, :, 0
-                    ]
-
-        return params
-
-    def timeit(self, msg=None):
-        if not msg is None:  # and (self.time_ref):
-            self.log.debug(f"time for {msg}: {(time.time()-self.time_ref)*10**6}")
-
-        self.time_ref = time.time()
 
     def set_logp_func(
-        self, vectorized=True, penalties=["parameter_bias", "reliability", "overlap"]
+        self, vectorized=True, penalties=["reliability", "overlap"]
     ):
         """
         TODO:
@@ -245,9 +123,11 @@ class HierarchicalBayesInference(HierarchicalModel):
             N_in = p_in.shape[0]
 
             self.timeit()
+            params = self.get_params_from_p(p_in)
+            params = build_distr_structure_from_params(params, "field", place_field)
+            print(params)
 
-            params = self.from_p_to_params(p_in)
-            # print(params)
+            # params = self.from_p_to_params(p_in)
             self.timeit("transforming parameters")
 
             tuning_curve_models = self.model_of_tuning_curve(params, stacked=True)
@@ -256,7 +136,7 @@ class HierarchicalBayesInference(HierarchicalModel):
             self.timeit("tuning curve model")
 
             logp_at_trial_and_position = np.zeros(
-                (2**self.N_f, N_in, self.nSamples, self.nbin)
+                (2**self.N_f, N_in, self.n_samples, self.n_bin)
             )
             logp_at_trial_and_position[0, ...] = self.probability_of_spike_observation(
                 tuning_curve_models[0, ...]
@@ -293,7 +173,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                 self.timeit("active model")
 
             else:
-                active_model = np.ones((1, N_in, self.nSamples), "bool")
+                active_model = np.ones((1, N_in, self.n_samples), "bool")
                 infield_range = None
 
             if get_logp:
@@ -333,21 +213,21 @@ class HierarchicalBayesInference(HierarchicalModel):
     def generate_infield_ranges(self, params, cut_range=2.0):
         ## define ranges, in which the different models are compared
         N_in = params["A0"].shape[0]
-        nSamples = self.nSamples if len(self.hierarchical) > 0 else 1
-        infield_range = np.zeros((self.N_f, N_in, nSamples, self.nbin), dtype=bool)
+        # nSamples = self.n_samples if len(self.hierarchical) > 0 else 1
+        infield_range = np.zeros((self.N_f, N_in, self.n_samples, self.n_bin), dtype=bool)
 
-        for field_model, PF in enumerate(
-            params["PF"]
+        for field_model, field in enumerate(
+            params["fields"]
         ):  # actually don't need the "if" before
             lower = np.floor(
-                np.mod(PF["theta"] - cut_range * PF["sigma"], self.nbin)
+                np.mod(field.theta - cut_range * field.sigma, self.n_bin)
             ).astype("int")
             upper = np.ceil(
-                np.mod(PF["theta"] + cut_range * PF["sigma"], self.nbin)
+                np.mod(field.theta + cut_range * field.sigma, self.n_bin)
             ).astype("int")
 
             for i in range(N_in):
-                for trial in range(nSamples):
+                for trial in range(self.n_samples):
                     if lower[i, trial] < upper[i, trial]:
                         infield_range[
                             field_model, i, trial, lower[i, trial] : upper[i, trial]
@@ -369,7 +249,7 @@ class HierarchicalBayesInference(HierarchicalModel):
         N_in = AIC.shape[1]
         active_model_reference = np.argmin(AIC, axis=0)
 
-        active_model = np.zeros((2**self.N_f, N_in, self.nSamples), dtype=bool)
+        active_model = np.zeros((2**self.N_f, N_in, self.n_samples), dtype=bool)
 
         active_model[0, ...] = np.all(active_model_reference == 0, axis=1)
         if self.N_f == 1:
@@ -389,7 +269,7 @@ class HierarchicalBayesInference(HierarchicalModel):
     def compute_AIC(self, logp_at_trial_and_position, infield_range):
         N_in = logp_at_trial_and_position.shape[1]
 
-        AIC = np.zeros((self.N_f + 1, N_in, self.N_f, self.nSamples))
+        AIC = np.zeros((self.N_f + 1, N_in, self.N_f, self.n_samples))
         for field_area in range(self.N_f):
 
             nDatapoints = infield_range[field_area, ...].sum(axis=-1)
@@ -441,7 +321,7 @@ class HierarchicalBayesInference(HierarchicalModel):
 
         if not penalty_factor:
             ## choose the penalty to be equal to the AIC difference between nofield and field model
-            penalty_factor = 3.0 * np.log(self.nbin)
+            penalty_factor = 3.0 * np.log(self.n_bin)
 
         N_in = p_in.shape[0]
 
@@ -457,9 +337,8 @@ class HierarchicalBayesInference(HierarchicalModel):
             ### for all field-trials, enforce centering of parameters around active meta parameter
 
             for key in self.priors:
-
-                if key.startswith("PF"):
-                    f = int(key[2])
+                
+                _,f = parse_name_and_indices(key, ["field"])
 
                 ## hierarchical parameters fluctuate around meta-parameters, and should be centered around them, as well as bias towards them for non-field trials
                 if self.priors[key]["n"] > 1:
@@ -486,9 +365,9 @@ class HierarchicalBayesInference(HierarchicalModel):
         overlap_penalty = np.zeros(N_in)
         if ("overlap" in penalties) and (self.N_f > 1):
             overlap_range = np.all(infield_range, axis=0).sum(axis=-1)
-            for PF in params["PF"]:
+            for field in params["fields"]:
                 overlap_penalty += penalty_factor * norm_cdf(
-                    overlap_range - 2 * PF["sigma"], 0, PF["sigma"]
+                    overlap_range - 2 * field.sigma, 0, field.sigma
                 ).sum(axis=-1)
             self.timeit("overlap penalty")
 
@@ -511,7 +390,7 @@ class HierarchicalBayesInference(HierarchicalModel):
 
             # print(active_model[[1,2,3],...])
 
-            reliability = active_trials / self.nSamples
+            reliability = active_trials / self.n_samples
             reliability_sigmoid = 1 - 1 / (1 + np.exp(-20 * (reliability - 0.3)))
             reliability_penalty = (reliability_sigmoid * dlogp).sum(axis=0)
 
@@ -534,18 +413,18 @@ class HierarchicalBayesInference(HierarchicalModel):
 
         ## introduce penalty for parameters to be below 0
         lower_bound_0_penalty = np.zeros(N_in)
-        for PF in params["PF"]:
-            for key in PF.keys():
-                if np.any(PF[key] < 0):
+        for field in params["fields"]:
+            for attr in attributes(field):
+                if np.any(getattr(field,attr.name) < 0):
                     lower_bound_0_penalty += no_go_factor * np.sum(
-                        -PF[key], where=PF[key] < 0, axis=-1
+                        -getattr(field,attr.name), where=getattr(field,attr.name) < 0, axis=-1
                     )
         self.timeit("lower_bound_0 penalty")
 
         ordered_fields_penalty = np.zeros(N_in)
         if self.N_f > 1:
             ordered_fields_penalty = no_go_factor * np.maximum(
-                0, params["PF"][0]["theta"] - params["PF"][1]["theta"]
+                0, params["fields"][0].theta - params["fields"][1].theta
             ).sum(axis=-1)
         self.timeit("ordered fields penalty")
 
@@ -562,15 +441,103 @@ class HierarchicalBayesInference(HierarchicalModel):
     def probability_of_spike_observation(self, nu):
         ## get probability to observe N spikes (amplitude) within dwelltime for each bin in each trial
         logp = (
-            self.N * np.log(nu * self.dwelltime)
+            self.data["event_counts"] * np.log(nu * self.data["T"])
             - self.log_N_factorial
-            - nu * self.dwelltime
+            - nu * self.data["T"]
         )
 
-        logp[np.logical_and(nu == 0, self.N == 0)] = 0
+        logp[np.logical_and(nu == 0, self.data["event_counts"] == 0)] = 0
         logp[np.isnan(logp)] = -10.0
         logp[np.isinf(logp)] = -100.0  # np.finfo(logp.dtype).min
         return logp
+
+    def model_of_tuning_curve(
+        self,
+        params,
+        fields="all",
+        stacked=False,
+        # int | str | None
+    ):
+
+        return model_of_tuning_curve(
+            self.x_arr, params, self.n_bin, self.n_samples, fields, stacked
+        )
+
+    # def from_p_to_params(self, p_in):
+    #     """
+    #     transform p_in to parameters for the model
+    #     """
+    #     params = {}
+
+    #     if self.N_f > 0:
+    #         params["fields"] = []
+    #         for _ in range(self.N_f):
+    #             params["fields"].append({})
+
+    #     for key in self.priors:
+    #         if self.priors[key]["meta"]:
+    #             continue
+
+    #         if key.startswith("fields"):
+    #             nField, key_param = key.split("_")
+    #             nField = int(nField[2:]) - 1
+    #             params["fields"][nField][key_param] = p_in[
+    #                 :,
+    #                 self.priors[key]["idx"] : self.priors[key]["idx"]
+    #                 + self.priors[key]["n"],
+    #             ]
+    #         else:
+    #             key_param = key.split("__")[0]
+    #             params[key_param] = p_in[
+    #                 :,
+    #                 self.priors[key]["idx"] : self.priors[key]["idx"]
+    #                 + self.priors[key]["n"],
+    #             ]
+
+    #     return params
+
+
+
+
+
+    # def from_results_to_params(self, results=None):
+    #     """
+    #     transform results to parameters for the model
+    #     """
+    #     results = results or self.inference_results
+    #     params = {}
+
+    #     if self.N_f > 0:
+    #         params["fields"] = []
+    #         for _ in range(self.N_f):
+    #             params["fields"].append({})
+
+    #     params["A0"] = results["fields"]["parameter"]["global"]["A0"][np.newaxis, 0]
+    #     for key in ["theta", "A", "sigma"]:
+    #         for f in range(self.N_f):
+    #             if results["fields"]["parameter"]["local"][key] is None:
+    #                 params["fields"][f][key] = results["fields"]["parameter"]["global"][
+    #                     key
+    #                 ][np.newaxis, f, 0]
+    #             else:
+    #                 params["fields"][f][key] = results["fields"]["parameter"]["local"][key][
+    #                     np.newaxis, f, :, 0
+    #                 ]
+
+    #     return params
+
+    def timeit(self, msg=None):
+        if not msg is None:  # and (self.time_ref):
+            self.log.debug(f"time for {msg}: {(time.time()-self.time_ref)*10**6}")
+
+        self.time_ref = time.time()
+
+
+
+
+
+
+
 
     def model_comparison(
         self,
@@ -582,9 +549,9 @@ class HierarchicalBayesInference(HierarchicalModel):
         t_start = time.time()
         self.inference_results = build_inference_results(
             N_f=2,
-            nbin=self.nbin,
+            nbin=self.n_bin,
             mode="bayesian",
-            n_trials=self.nSamples,
+            n_trials=self.n_samples,
             hierarchical=hierarchical,
         )
 
@@ -681,81 +648,83 @@ class HierarchicalBayesInference(HierarchicalModel):
             for f in range(self.inference_results["fields"]["n_modes"]):
                 self.inference_results["fields"]["reliability"][f] = (
                     self.inference_results["fields"]["active_trials"][f, ...] > 0.5
-                ).sum() / self.nSamples
+                ).sum() / self.n_samples
 
         # if "firingstats" in which:
         #     ## firing rate statistics
         #     self.inference_results["firingstats"]["trial_map"] = self.N.sum(
         #         axis=0
-        #     ) / self.dwelltime.sum(axis=0)
+        #     ) / self.data["T"].sum(axis=0)
         #     self.inference_results["firingstats"]["map"] = self.N.sum(
         #         axis=(0, 1)
-        #     ) / self.dwelltime.sum(axis=(0, 1))
+        #     ) / self.data["T"].sum(axis=(0, 1))
         #     self.inference_results["firingstats"]["rate"] = (
-        #         self.N.sum() / self.dwelltime.sum()
+        #         self.N.sum() / self.data["T"].sum()
         #     )
 
-    def run_sampling(
-        self,
-        penalties=["overlap", "reliability"],
-        n_live=100,
-        improvement_loops=2,
-        show_status=False,
-    ):
+    # def run_sampling(
+    #     self,
+    #     prior_transform,
+    #     loglikelihood,
+    #     parameter_names,
+    #     n_live=100,
+    #     improvement_loops=2,
+    #     show_status=False,
+    # ):
+    #     my_prior_transform = self.set_prior_transform(vectorized=True)
+    #     penalties=["overlap", "reliability"],
+    #     my_likelihood = self.set_logp_func(vectorized=True, penalties=penalties)
 
-        my_prior_transform = self.set_prior_transform(vectorized=True)
-        my_likelihood = self.set_logp_func(vectorized=True, penalties=penalties)
+    #     ## setting up the sampler
 
-        ## setting up the sampler
+    #     # ## nested sampling parameters
+    #     # NS_parameters = {
+    #     #     "min_num_live_points": n_live,
+    #     #     "max_num_improvement_loops": improvement_loops,
+    #     #     "max_iters": 50000,
+    #     #     "cluster_num_live_points": 20,
+    #     # }
 
-        ## nested sampling parameters
-        NS_parameters = {
-            "min_num_live_points": n_live,
-            "max_num_improvement_loops": improvement_loops,
-            "max_iters": 50000,
-            "cluster_num_live_points": 20,
-        }
+    #     sampler = ultranest.ReactiveNestedSampler(
+    #         self.paramNames,
+    #         my_likelihood,
+    #         my_prior_transform,
+    #         wrapped_params=self.wrap,
+    #         vectorized=True,
+    #         num_bootstraps=20,
+    #         ndraw_min=512,
+    #     )
 
-        sampler = ultranest.ReactiveNestedSampler(
-            self.paramNames,
-            my_likelihood,
-            my_prior_transform,
-            wrapped_params=self.wrap,
-            vectorized=True,
-            num_bootstraps=20,
-            ndraw_min=512,
-        )
+    #     sampling_result = None
+    #     n_steps = 10  # hbm.f * 10
+    #     while True:
+    #         try:
+    #             # sampler.stepsampler = PopulationSliceSampler(
+    #             #     popsize=2**4,
+    #             #     nsteps=n_steps,
+    #             #     generate_direction=generate_region_oriented_direction,
+    #             # )
 
-        sampling_result = None
-        n_steps = 10  # hbm.f * 10
-        while True:
-            try:
-                sampler.stepsampler = PopulationSliceSampler(
-                    popsize=2**4,
-                    nsteps=n_steps,
-                    generate_direction=generate_region_oriented_direction,
-                )
+    #             # sampling_result = sampler.run(
+    #             #     **NS_parameters,
+    #             #     region_class=RobustEllipsoidRegion,
+    #             #     update_interval_volume_fraction=0.01,
+    #             #     show_status=show_status,
+    #             #     viz_callback=False,
+    #             # )
 
-                sampling_result = sampler.run(
-                    **NS_parameters,
-                    region_class=RobustEllipsoidRegion,
-                    update_interval_volume_fraction=0.01,
-                    show_status=show_status,
-                    viz_callback=False,
-                )
-
-                # self.store_inference_results(sampling_result)
-                break
-            except Exception as exc:
-                if type(exc) == KeyboardInterrupt:
-                    break
-                if type(exc) == TimeoutException:
-                    raise TimeoutException("Sampling took too long")
-                n_steps *= 2
-                print(f"increasing step size to {n_steps=}")
-                if n_steps > 100:
-                    break
-        return sampling_result
+    #             # self.store_inference_results(sampling_result)
+    #             break
+    #         except Exception as exc:
+    #             if type(exc) == KeyboardInterrupt:
+    #                 break
+    #             if type(exc) == TimeoutException:
+    #                 raise TimeoutException("Sampling took too long")
+    #             n_steps *= 2
+    #             print(f"increasing step size to {n_steps=}")
+    #             if n_steps > 100:
+    #                 break
+    #     return sampling_result
 
     def store_local_parameters(self, f, posterior, key, key_results):
 
@@ -810,14 +779,14 @@ class HierarchicalBayesInference(HierarchicalModel):
 
     def store_inference_results(self, results, n_steps=100):
 
-        self.n_trials = self.nSamples
+        self.n_trials = self.n_samples
 
         if not hasattr(self, "inference_results"):
             self.inference_results = build_inference_results(
                 N_f=2,
-                nbin=self.nbin,
+                nbin=self.n_bin,
                 mode="bayesian",
-                n_trials=self.nSamples,
+                n_trials=self.n_samples,
                 n_steps=n_steps,
                 hierarchical=self.hierarchical,
             )
@@ -863,8 +832,8 @@ class HierarchicalBayesInference(HierarchicalModel):
         self.posterior_arrays = {
             "A0": np.linspace(0, 2, n_steps + 1),
             "A": np.linspace(0, 50, n_steps + 1),
-            "sigma": np.linspace(0, self.nbin / 2.0, n_steps + 1),
-            "theta": np.linspace(0, self.nbin, n_steps + 1),
+            "sigma": np.linspace(0, self.n_bin / 2.0, n_steps + 1),
+            "theta": np.linspace(0, self.n_bin, n_steps + 1),
         }
 
         for i, key in enumerate(self.paramNames):
@@ -890,10 +859,10 @@ class HierarchicalBayesInference(HierarchicalModel):
 
             if (paramName == "theta") and (key_stat != "sigma"):
                 # print("wrap theta")
-                mean = weighted_circmean(samp, weights=weights, low=0, high=self.nbin)
-                shift_from_center = mean - self.nbin / 2.0
+                mean = weighted_circmean(samp, weights=weights, low=0, high=self.n_bin)
+                shift_from_center = mean - self.n_bin / 2.0
 
-                samp[samp < np.mod(shift_from_center, self.nbin)] += self.nbin
+                samp[samp < np.mod(shift_from_center, self.n_bin)] += self.n_bin
 
             idx_sorted = np.argsort(samp)
             samples_sorted = samp[idx_sorted]
@@ -911,7 +880,7 @@ class HierarchicalBayesInference(HierarchicalModel):
 
             if paramName == "theta":
                 f = interp1d(
-                    np.mod(samples_sorted, self.nbin),
+                    np.mod(samples_sorted, self.n_bin),
                     cumsw,
                     bounds_error=False,
                     fill_value="extrapolate",
@@ -927,7 +896,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                 )
 
             posterior[key] = {
-                "CI": np.mod(quants[1:-1], self.nbin),
+                "CI": np.mod(quants[1:-1], self.n_bin),
                 "mean": mean,
                 "p_x": (
                     ## cdf makes jump at wrap-point, resulting in a single negative value. "Maximum" fixes this, but is not ideal
@@ -945,8 +914,17 @@ class HierarchicalBayesInference(HierarchicalModel):
         return posterior
 
 
+
 def norm_cdf(x, mu, sigma):
     return 0.5 * (1.0 + erf((x - mu) / (np.sqrt(2) * sigma)))
+
+
+@dataclass
+class place_field:
+    A: float
+    sigma: float
+    theta: float
+
 
 class TimeoutException(Exception):
     def __init__(self, *args, **kwargs):

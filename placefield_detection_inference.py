@@ -21,7 +21,7 @@ import ultranest.stepsampler
 
 from .utils import build_struct_PC_results, get_average, get_MI, jackknife, ecdf, compute_serial_matrix, corr0, gauss_smooth, get_reliability, get_firingrate, get_firingmap, gamma_paras, lognorm_paras, add_number, shuffling, prepare_activity
 
-from .HierarchicalBayesInference import *
+from .BayesModel import *
 
 class placefield_detection_inference:
 
