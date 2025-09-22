@@ -24,20 +24,18 @@ logger.setLevel(logging.WARNING)
 
 
 class HierarchicalBayesInference(HierarchicalModel):    
-    
+
     def prepare_data(self, event_counts, T, dimension_names=None, iter_dims=None):
 
         super().prepare_data(event_counts, T, dimension_names, iter_dims)
         # self.N = N[np.newaxis, ...]
 
         self.n_samples, self.n_bin = self.dimensions["shape"][-2:]
-        
 
         self.x_arr = np.broadcast_to(np.arange(self.n_bin),(1,)*self.dimensions["n"]+(self.n_bin,))
 
         ## pre-calculate log-factorial for speedup
         self.log_N_factorial = np.log(sp_factorial(self.data["event_counts"]))
-
 
     def set_priors(self, priors_init=None, N_f=1):
 
@@ -90,8 +88,6 @@ class HierarchicalBayesInference(HierarchicalModel):
 
         super().set_priors(self.priors_init)
 
-
-
     def set_logp_func(
         self, vectorized=True, penalties=["reliability", "overlap"]
     ):
@@ -125,7 +121,6 @@ class HierarchicalBayesInference(HierarchicalModel):
             self.timeit()
             params = self.get_params_from_p(p_in)
             params = build_distr_structure_from_params(params, "field", place_field)
-            print(params)
 
             # params = self.from_p_to_params(p_in)
             self.timeit("transforming parameters")
@@ -337,7 +332,7 @@ class HierarchicalBayesInference(HierarchicalModel):
             ### for all field-trials, enforce centering of parameters around active meta parameter
 
             for key in self.priors:
-                
+
                 _,f = parse_name_and_indices(key, ["field"])
 
                 ## hierarchical parameters fluctuate around meta-parameters, and should be centered around them, as well as bias towards them for non-field trials
@@ -496,10 +491,6 @@ class HierarchicalBayesInference(HierarchicalModel):
 
     #     return params
 
-
-
-
-
     # def from_results_to_params(self, results=None):
     #     """
     #     transform results to parameters for the model
@@ -531,13 +522,6 @@ class HierarchicalBayesInference(HierarchicalModel):
             self.log.debug(f"time for {msg}: {(time.time()-self.time_ref)*10**6}")
 
         self.time_ref = time.time()
-
-
-
-
-
-
-
 
     def model_comparison(
         self,
@@ -726,9 +710,21 @@ class HierarchicalBayesInference(HierarchicalModel):
     #                 break
     #     return sampling_result
 
+
+class PlaceFieldInferenceResults:
+
+    def __init__(self):
+        ## these given from "dimension"?
+        self.n_bin = 0
+        self.n_trials = 0
+        self.N_f = 0
+
+        self.parameter_names = []
+        self.inference_results = {}
+        pass
+
     def store_local_parameters(self, f, posterior, key, key_results):
 
-        # parameter =
         for trial in range(self.n_trials):
             key_trial = f"{key_results}__{trial}"
             self.inference_results["fields"]["parameter"]["local"][key][f, trial, 0] = (
@@ -779,14 +775,12 @@ class HierarchicalBayesInference(HierarchicalModel):
 
     def store_inference_results(self, results, n_steps=100):
 
-        self.n_trials = self.n_samples
-
         if not hasattr(self, "inference_results"):
             self.inference_results = build_inference_results(
                 N_f=2,
                 nbin=self.n_bin,
                 mode="bayesian",
-                n_trials=self.n_samples,
+                n_trials=self.n_trials
                 n_steps=n_steps,
                 hierarchical=self.hierarchical,
             )
@@ -836,7 +830,7 @@ class HierarchicalBayesInference(HierarchicalModel):
             "theta": np.linspace(0, self.n_bin, n_steps + 1),
         }
 
-        for i, key in enumerate(self.paramNames):
+        for i, key in enumerate(self.parameter_names):
 
             try:
                 key_root, key_stat = key.split("__")
@@ -912,7 +906,6 @@ class HierarchicalBayesInference(HierarchicalModel):
             }
 
         return posterior
-
 
 
 def norm_cdf(x, mu, sigma):

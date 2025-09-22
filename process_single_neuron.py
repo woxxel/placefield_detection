@@ -79,10 +79,9 @@ class process_single_neuron:
             self.preprocessed
         ), "Preprocessing not run. Please run `run_preprocessing` first."
 
-
         modes = self.mode_place_cell_detection + self.mode_place_field_detection
         unique_modes = list(set(modes))
-        
+
         self.place_cell_detection()
         self.place_field_detection(**kwargs)
 
@@ -90,7 +89,7 @@ class process_single_neuron:
         # results = self.place_cell_results.get(
         #     "bayesian", {"status": {"is_place_cell": {}}}
         # )
-        
+
         for method in unique_modes:
             if method in self.place_cell_results:
                 self.results[method] = self.place_cell_results[method]
@@ -131,21 +130,24 @@ class process_single_neuron:
 
         if "bayesian" in self.mode_place_field_detection:
 
-            hbm = HierarchicalBayesInference(
+            HBI = HierarchicalBayesInference(
+                logLevel=logging.ERROR,
+            )
+            HBI.prepare_data(
                 self.prepared_activity["map_trial_spikes"],
                 self.behavior["trials"]["dwelltime"],
-                logLevel=logging.ERROR,
+                iter_dims=False,
             )
 
             limit_execution_time = kwargs.get("limit_execution_time", 1200)
             show_status = kwargs.get("show_status", False)
-            hbm.model_comparison(
+            HBI.model_comparison(
                 hierarchical=["theta"],
                 limit_execution_time=limit_execution_time,
                 show_status=show_status,
             )
 
-            self.place_cell_results["bayesian"] = hbm.inference_results
+            self.place_cell_results["bayesian"] = HBI.inference_results
 
             # print("THIS SHOULD BE CHANGED TO PLACE_FIELD_RESULTS")
             # hbm.display_results()
