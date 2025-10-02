@@ -8,9 +8,9 @@ from .alternative_detection_methods import (
 )
 
 from .utils import prepare_activity
-from .analyze_results import build_results
+from .result_structures import build_results
 
-from .BayesModel import HierarchicalBayesInference
+from .BayesModel import HierarchicalBayesInference, model_comparison
 
 
 class process_single_neuron:
@@ -44,8 +44,7 @@ class process_single_neuron:
         unique_modes = list(set(modes))
 
         self.results = build_results(
-            n_cells=1,
-            nbin=self.behavior["nbin"],
+            n_bin=self.behavior["nbin"],
             n_trials=self.behavior["trials"]["ct"],
             modes=unique_modes,
         )
@@ -130,22 +129,28 @@ class process_single_neuron:
 
         if "bayesian" in self.mode_place_field_detection:
 
-            HBI = HierarchicalBayesInference(
-                logLevel=logging.ERROR,
-            )
-            HBI.prepare_data(
+            inference_results = model_comparison(
                 self.prepared_activity["map_trial_spikes"],
                 self.behavior["trials"]["dwelltime"],
-                iter_dims=False,
+                show_status=True
             )
 
-            limit_execution_time = kwargs.get("limit_execution_time", 1200)
-            show_status = kwargs.get("show_status", False)
-            HBI.model_comparison(
-                hierarchical=["theta"],
-                limit_execution_time=limit_execution_time,
-                show_status=show_status,
-            )
+            # HBI = HierarchicalBayesInference(
+            #     logLevel=logging.ERROR,
+            # )
+            # HBI.prepare_data(
+            #     self.prepared_activity["map_trial_spikes"],
+            #     self.behavior["trials"]["dwelltime"],
+            #     iter_dims=False,
+            # )
+
+            # limit_execution_time = kwargs.get("limit_execution_time", 1200)
+            # show_status = kwargs.get("show_status", False)
+            # HBI.model_comparison(
+            #     hierarchical=["theta"],
+            #     limit_execution_time=limit_execution_time,
+            #     show_status=show_status,
+            # )
 
             self.place_cell_results["bayesian"] = HBI.inference_results
 

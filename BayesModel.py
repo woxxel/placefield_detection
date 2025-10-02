@@ -1,17 +1,17 @@
 import logging, time, os, warnings, signal
 import numpy as np
 from scipy.special import factorial as sp_factorial, erfinv, erf
-from scipy.ndimage import gaussian_filter1d as gauss_filter
-from scipy.interpolate import interp1d
+
 from scipy.stats import chi2
 
 from dataclasses import dataclass, fields as attributes
 
 from .HierarchicalBayesModel import HierarchicalModel
 from .HierarchicalBayesModel.structures import build_distr_structure_from_params, build_key, prior_structure, halfnorm_ppf, norm_ppf, bounded_flat, parse_name_and_indices
+from .HierarchicalBayesModel.NestedSamplingMethods import run_sampling
 
-from .utils import circmean as weighted_circmean, model_of_tuning_curve
-from .analyze_results import build_inference_results
+from .utils import model_of_tuning_curve
+# from .result_structures import build_inference_results
 
 os.environ["OMP_NUM_THREADS"] = "1"
 logging.basicConfig(level=logging.ERROR)
@@ -47,8 +47,6 @@ class HierarchicalBayesInference(HierarchicalModel):
                 firing_map, [10, 90]
             ), 0.1)
 
-            self.n_bin
-
             self.priors_init = {}
             self.priors_init["A0"] = prior_structure(
                 halfnorm_ppf,
@@ -73,10 +71,11 @@ class HierarchicalBayesInference(HierarchicalModel):
                 )
                 self.priors_init[build_key("theta", "field", f)] = prior_structure(
                     norm_ppf,
-                    mean=prior_structure(bounded_flat, low=0, high=self.n_bin),
+                    mean=prior_structure(bounded_flat, low=0, high=self.n_bin,periodic=True),
                     sigma=prior_structure(halfnorm_ppf, loc=0, scale=self.n_bin / 20.0),
                     label=f"$\\theta_{f}$",
-                    shape=(self.n_samples,)
+                    shape=(self.n_samples,),
+                    periodic=True,
                 )
 
             # assert (
@@ -106,8 +105,6 @@ class HierarchicalBayesInference(HierarchicalModel):
                 (thus, running inference only once on complete session, with N*4 parameters)
         """
 
-        import matplotlib.pyplot as plt
-
         def get_logp(
             p_in, get_active_model=False, get_logp=False, get_tuning_curve=False
         ):
@@ -122,7 +119,8 @@ class HierarchicalBayesInference(HierarchicalModel):
             params = self.get_params_from_p(p_in)
             params = build_distr_structure_from_params(params, "field", place_field)
 
-            # params = self.from_p_to_params(p_in)
+            # print(params)
+            # print(self.data)
             self.timeit("transforming parameters")
 
             tuning_curve_models = self.model_of_tuning_curve(params, stacked=True)
@@ -523,389 +521,116 @@ class HierarchicalBayesInference(HierarchicalModel):
 
         self.time_ref = time.time()
 
-    def model_comparison(
-        self,
-        hierarchical=["theta"],
-        wrap=[],
-        show_status=False,
-        limit_execution_time=None,
-    ):
-        t_start = time.time()
-        self.inference_results = build_inference_results(
-            N_f=2,
-            nbin=self.n_bin,
-            mode="bayesian",
-            n_trials=self.n_samples,
-            hierarchical=hierarchical,
-        )
+from .HierarchicalBayesModel.NestedSamplingMethods import run_sampling
+from .result_structures import PlaceFieldInferenceResults, handover_inference_results, build_results
 
-        if limit_execution_time:
+def model_comparison(
+    event_counts,
+    T,
+    mode="dynesty",
+    show_status=False,
+    limit_execution_time=None,
+):
+    # t_start = time.time()
 
-            def handler(signum, frame):
-                print("Forever is over!")
-                raise TimeoutException("end of time")
+    vectorized = mode == "ultranest"
 
-            signal.signal(signal.SIGALRM, handler)
+    HBI = HierarchicalBayesInference(logLevel="ERROR")
+    HBI.prepare_data(
+        event_counts,
+        T,
+        iter_dims=False,
+        dimension_names=["trials", "position_bins"],
+    )
+    # HBI.set_priors(N_f=2)
+    res = PlaceFieldInferenceResults(n_bin=HBI.n_bin, n_trials=HBI.n_samples)
 
-        if (self.N > 0).sum() > 10:
-            # if (activity[self.behavior["active"]] > 0).sum() < 10:
-            # print("Not enough instances of activity detected")
-            # return None
-
-            previous_logz = -np.inf
-            for f in range(2 + 1):
-                if show_status:
-                    print(f"\n{f=}\n")
-
-                try:
-                    if limit_execution_time:
-                        signal.alarm(limit_execution_time)
-                    self.set_priors(N_f=f, hierarchical_in=hierarchical, wrap=wrap)
-
-                    sampling_results = self.run_sampling(
-                        penalties=["overlap", "reliability"],
-                        improvement_loops=2,
-                        show_status=show_status,
-                    )
-
-                    if limit_execution_time:
-                        signal.alarm(0)
-
-                    self.inference_results["fields"]["logz"][f, 0] = sampling_results[
-                        "logz"
-                    ]
-                    self.inference_results["fields"]["logz"][f, 1] = sampling_results[
-                        "logzerr"
-                    ]
-
-                    ## 3 degrees of freedom, as statistic depends on difference of dof between models
-                    if chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3) > 0.01:
-                        # if previous_logz > sampling_results["logz"]:
-                        # print("chi statistic is not significant, stopping inference")
-                        # print(
-                        #     f"previous logz: {previous_logz:.2f}, current logz: {sampling_results['logz']:.2f}"
-                        # )
-                        # print("chi2:",chi2.sf(-2*(previous_logz - sampling_results["logz"]), 3))
-                        self.N_f = f - 1
-                        break
-
-                    self.inference_results["fields"]["n_modes"] = self.N_f
-                    self.store_inference_results(sampling_results)
-                    previous_logz = sampling_results["logz"]
-                except Exception as exc:
-                    print("Exception:", exc)
-                    break
-
-            self.calculate_general_statistics()
-
-            # if plot:
-            #     self.display_results()
-
-            string_out = f"Model comparison finished after {time.time() - t_start:.2f}s with evidences: "
-            for f in range(2 + 1):
-                if not np.isnan(self.inference_results["fields"]["logz"][f, 0]):
-                    string_out += f"\t {f=} {'*' if f==self.inference_results['fields']['n_modes'] else ''}, logz={self.inference_results['fields']['logz'][f,0]:.2f}"
-        else:
-            self.calculate_general_statistics(which=["firingstats"])
-
-            string_out = "Not enough instances of activity detected"
-
-        print(string_out)
-
-        return self.inference_results
-
-    def calculate_general_statistics(self, which=["fields", "firingstats"]):
-
-        if "fields" in which:
-            # ## number of fields of best model
-            # if np.all(np.isnan(self.inference_results["fields"]["logz"][:, 0])):
-            #     field_model = -1
-            # else:
-            #     field_model = np.nanargmax(
-            #         self.inference_results["fields"]["logz"][:, 0]
-            #     )
-            #     self.inference_results["fields"]["n_modes"] = field_model
-
-            self.inference_results["is_place_cell"] = self.inference_results["fields"]["n_modes"] > 0
-
-            ## reliability of place fields
-            for f in range(self.inference_results["fields"]["n_modes"]):
-                self.inference_results["fields"]["reliability"][f] = (
-                    self.inference_results["fields"]["active_trials"][f, ...] > 0.5
-                ).sum() / self.n_samples
-
-        # if "firingstats" in which:
-        #     ## firing rate statistics
-        #     self.inference_results["firingstats"]["trial_map"] = self.N.sum(
-        #         axis=0
-        #     ) / self.data["T"].sum(axis=0)
-        #     self.inference_results["firingstats"]["map"] = self.N.sum(
-        #         axis=(0, 1)
-        #     ) / self.data["T"].sum(axis=(0, 1))
-        #     self.inference_results["firingstats"]["rate"] = (
-        #         self.N.sum() / self.data["T"].sum()
-        #     )
-
-    # def run_sampling(
-    #     self,
-    #     prior_transform,
-    #     loglikelihood,
-    #     parameter_names,
-    #     n_live=100,
-    #     improvement_loops=2,
-    #     show_status=False,
-    # ):
-    #     my_prior_transform = self.set_prior_transform(vectorized=True)
-    #     penalties=["overlap", "reliability"],
-    #     my_likelihood = self.set_logp_func(vectorized=True, penalties=penalties)
-
-    #     ## setting up the sampler
-
-    #     # ## nested sampling parameters
-    #     # NS_parameters = {
-    #     #     "min_num_live_points": n_live,
-    #     #     "max_num_improvement_loops": improvement_loops,
-    #     #     "max_iters": 50000,
-    #     #     "cluster_num_live_points": 20,
-    #     # }
-
-    #     sampler = ultranest.ReactiveNestedSampler(
-    #         self.paramNames,
-    #         my_likelihood,
-    #         my_prior_transform,
-    #         wrapped_params=self.wrap,
-    #         vectorized=True,
-    #         num_bootstraps=20,
-    #         ndraw_min=512,
-    #     )
-
-    #     sampling_result = None
-    #     n_steps = 10  # hbm.f * 10
-    #     while True:
-    #         try:
-    #             # sampler.stepsampler = PopulationSliceSampler(
-    #             #     popsize=2**4,
-    #             #     nsteps=n_steps,
-    #             #     generate_direction=generate_region_oriented_direction,
-    #             # )
-
-    #             # sampling_result = sampler.run(
-    #             #     **NS_parameters,
-    #             #     region_class=RobustEllipsoidRegion,
-    #             #     update_interval_volume_fraction=0.01,
-    #             #     show_status=show_status,
-    #             #     viz_callback=False,
-    #             # )
-
-    #             # self.store_inference_results(sampling_result)
-    #             break
-    #         except Exception as exc:
-    #             if type(exc) == KeyboardInterrupt:
-    #                 break
-    #             if type(exc) == TimeoutException:
-    #                 raise TimeoutException("Sampling took too long")
-    #             n_steps *= 2
-    #             print(f"increasing step size to {n_steps=}")
-    #             if n_steps > 100:
-    #                 break
-    #     return sampling_result
-
-
-class PlaceFieldInferenceResults:
-
-    def __init__(self):
-        ## these given from "dimension"?
-        self.n_bin = 0
-        self.n_trials = 0
-        self.N_f = 0
-
-        self.parameter_names = []
-        self.inference_results = {}
-        pass
-
-    def store_local_parameters(self, f, posterior, key, key_results):
-
-        for trial in range(self.n_trials):
-            key_trial = f"{key_results}__{trial}"
-            self.inference_results["fields"]["parameter"]["local"][key][f, trial, 0] = (
-                posterior[key_trial]["mean"]
-            )
-            self.inference_results["fields"]["parameter"]["local"][key][
-                f, trial, 1:
-            ] = posterior[key_trial]["CI"][[0, -1]]
-
-            self.inference_results["fields"]["p_x"]["local"][key][f, trial, :] = (
-                posterior[key_trial]["p_x"]
-            )
-        pass
-
-    def store_global_parameters(self, f, posterior, key, key_results):
-        if key == "A0":
-            self.inference_results["fields"]["parameter"]["global"][key][0] = posterior[
-                key_results
-            ]["mean"]
-            self.inference_results["fields"]["parameter"]["global"][key][1:] = (
-                posterior[key_results]["CI"][[0, -1]]
-            )
-
-            self.inference_results["fields"]["p_x"]["global"][key] = posterior[
-                key_results
-            ]["p_x"]
-        else:
-            self.inference_results["fields"]["parameter"]["global"][key][f, 0] = (
-                posterior[key_results]["mean"]
-            )
-            self.inference_results["fields"]["parameter"]["global"][key][f, 1:] = (
-                posterior[key_results]["CI"][[0, -1]]
-            )
-
-            self.inference_results["fields"]["p_x"]["global"][key][f, :] = posterior[
-                key_results
-            ]["p_x"]
-
-    def store_parameters(self, f, posterior, key, key_results):
-
-        if key in self.hierarchical:
-            self.store_global_parameters(f, posterior, key, f"{key_results}__mean")
-            self.store_local_parameters(f, posterior, key, key_results)
-        else:
-            self.store_global_parameters(f, posterior, key, key_results)
-            # for store_keys in ["parameter", "p_x"]:
-            #     self.inference_results["fields"][store_keys]["local"][key] = None
-
-    def store_inference_results(self, results, n_steps=100):
-
-        if not hasattr(self, "inference_results"):
-            self.inference_results = build_inference_results(
-                N_f=2,
-                nbin=self.n_bin,
-                mode="bayesian",
-                n_trials=self.n_trials
-                n_steps=n_steps,
-                hierarchical=self.hierarchical,
-            )
-        posterior = self.build_posterior(results)
-
-        for key in ["A0", "theta", "A", "sigma"]:
-
-            if key == "A0":
-                ## A0 is place f ield-independent parameter
-                self.store_parameters(0, posterior, key, key)
-                pass
-            else:
-                ## other parameters are place-field dependent
-                for f in range(self.N_f):
-                    key_prior = f"PF{f+1}_{key}"
-                    self.store_parameters(f, posterior, key, key_prior)
-
-        self.inference_results["fields"]["logz"][self.N_f, 0] = results["logz"]
-        self.inference_results["fields"]["logz"][self.N_f, 1] = results["logzerr"]
-
-        N_draws = 1000
-        my_logp = self.set_logp_func(penalties=["overlap", "reliability"])
-
-        active_model = my_logp(
-            results["weighted_samples"]["points"][-N_draws:, :],
-            get_active_model=True,
-        )
-
-        if self.N_f > 1:
-            active_model[1, active_model[-1, ...]] = True
-            active_model[2, active_model[-1, ...]] = True
-
-        for f in range(self.N_f):
-            self.inference_results["fields"]["active_trials"][f, ...] = active_model[
-                f + 1, ...
-            ].sum(axis=0)
-        self.inference_results["fields"]["active_trials"] /= N_draws
-
-    def build_posterior(self, results, smooth_sigma=1, n_steps=100, use_dynesty=False):
-
-        posterior = {}
-
-        self.posterior_arrays = {
-            "A0": np.linspace(0, 2, n_steps + 1),
-            "A": np.linspace(0, 50, n_steps + 1),
-            "sigma": np.linspace(0, self.n_bin / 2.0, n_steps + 1),
-            "theta": np.linspace(0, self.n_bin, n_steps + 1),
+    # inference_results = build_results(n_bin=HBI.n_bin, n_trials=HBI.n_samples, modes=["bayesian"])
+    inference_results = {
+        "field_models": {
+            "logz": np.full((3,2),np.nan)
         }
+    }
 
-        for i, key in enumerate(self.parameter_names):
+    if limit_execution_time:
 
-            try:
-                key_root, key_stat = key.split("__")
-            except:
-                key_root = key
-                key_stat = None
-            paramName = key_root.split("_")[-1]
+        def handler(signum, frame):
+            print("Forever is over!")
+            raise TimeoutException("end of time")
 
-            if use_dynesty:
-                samp = results.samples[:, i]
-                weights = results.importance_weights()
+        signal.signal(signal.SIGALRM, handler)
 
-            else:
-                samp = results["weighted_samples"]["points"][:, i]
-                weights = results["weighted_samples"]["weights"]
+    if (event_counts > 0).sum() < 10:
+        print("Not enough instances of activity detected")
+        return None
 
-            mean = (samp * weights).sum()
+    previous_logz = -np.inf
+    for n_field in range(2 + 1):
+        if show_status:
+            print(f"\n{n_field=}\n")
 
-            qs = [0.001, 0.05, 0.341, 0.5, 0.841, 0.95, 0.999]
+        try:
+            if limit_execution_time:
+                signal.alarm(limit_execution_time)
+            
+            HBI.set_priors(N_f=n_field)
+            res.build_results(HBI.priors)
 
-            if (paramName == "theta") and (key_stat != "sigma"):
-                # print("wrap theta")
-                mean = weighted_circmean(samp, weights=weights, low=0, high=self.n_bin)
-                shift_from_center = mean - self.n_bin / 2.0
+            my_prior_transform = HBI.set_prior_transform(vectorized=vectorized)
+            my_likelihood = HBI.set_logp_func(vectorized=vectorized)
 
-                samp[samp < np.mod(shift_from_center, self.n_bin)] += self.n_bin
+            tmp_results, _ = run_sampling(
+                my_prior_transform,
+                my_likelihood,
+                HBI.parameter_names_all,
+                nP=12,
+                n_live=100, periodic=HBI.periodic,
+                mode=mode
+            )
+            res.store_inference_results(tmp_results,HBI.parameter_names_all,HBI.periodic,HBI.set_logp_func(vectorized=False))    # this includes calculation of reliability and active trials
 
-            idx_sorted = np.argsort(samp)
-            samples_sorted = samp[idx_sorted]
+            inference_results["field_models"][n_field] = res.fields
+            # handover_inference_results(res.fields, inference_results["bayesian"]["field_models"][n_field])
 
-            # get corresponding weights
-            sw = weights[idx_sorted]
+            # hand over logz to joint results for easier comparison
+            inference_results["field_models"]["logz"][n_field,:] = inference_results["field_models"][n_field]["logz"]
 
-            cumsw = np.cumsum(sw)
-            quants = np.interp(qs, cumsw, samples_sorted)
+            if limit_execution_time:
+                signal.alarm(0)
 
-            # nsteps = 101
-            # low, high = quants[[0, -1]]
-            # x = np.linspace(low, high, nsteps)
-            x = self.posterior_arrays[paramName]
+            ## 3 degrees of freedom, as statistic depends on difference of dof between models
+            if chi2.sf(-2*(previous_logz - inference_results["field_models"]["logz"][n_field,0]), 3) > 0.01:
+                break
 
-            if paramName == "theta":
-                f = interp1d(
-                    np.mod(samples_sorted, self.n_bin),
-                    cumsw,
-                    bounds_error=False,
-                    fill_value="extrapolate",
-                )
-                # import matplotlib.pyplot as plt
+            N_f = n_field
 
-                # plt.figure()
-                # plt.plot(x[:-1], f(x[1:]) - f(x[:-1]))
-                # plt.show()
-            else:
-                f = interp1d(
-                    samples_sorted, cumsw, bounds_error=False, fill_value="extrapolate"
-                )
+            previous_logz = inference_results["field_models"]["logz"][n_field,0]
+        except Exception as exc:
+            print("Exception:", exc)
+            break
+        
+    HBI.set_priors(N_f=2)
+    res.build_results(priors=HBI.priors)
+    inference_results["fields"] = res.fields
+    inference_results["fields"] = handover_inference_results(inference_results["field_models"][N_f], inference_results["bayesian"]["fields"])
+    # inference_results["bayesian"]["field_models"][n_field]
+    # self.calculate_general_statistics()
 
-            posterior[key] = {
-                "CI": np.mod(quants[1:-1], self.n_bin),
-                "mean": mean,
-                "p_x": (
-                    ## cdf makes jump at wrap-point, resulting in a single negative value. "Maximum" fixes this, but is not ideal
-                    np.maximum(
-                        0,
-                        (
-                            gauss_filter(f(x[1:]) - f(x[:-1]), smooth_sigma)
-                            if smooth_sigma > 0
-                            else f(x[1:]) - f(x[:-1])
-                        ),
-                    )
-                ),
-            }
+        # if plot:
+        #     self.display_results()
 
-        return posterior
+    #     string_out = f"Model comparison finished after {time.time() - t_start:.2f}s with evidences: "
+    #     for f in range(2 + 1):
+    #         if not np.isnan(self.inference_results["fields"]["logz"][f, 0]):
+    #             string_out += f"\t {f=} {'*' if f==self.inference_results['fields']['n_modes'] else ''}, logz={self.inference_results['fields']['logz'][f,0]:.2f}"
+    # else:
+    #     self.calculate_general_statistics(which=["firingstats"])
+
+    #     string_out = "Not enough instances of activity detected"
+
+    # print(string_out)
+
+    return inference_results
 
 
 def norm_cdf(x, mu, sigma):

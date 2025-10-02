@@ -1,7 +1,5 @@
-import os, time, math, warnings, pickle
-from pathlib import Path
+import os, time, warnings
 
-# from caiman.utils.utils import
 import multiprocessing as mp
 
 from matplotlib import pyplot as plt
@@ -27,7 +25,7 @@ from .alternative_detection_methods import stability_method
 #     build_inference_results,
 # )
 
-from .analyze_results import build_results, handover_inference_results
+from .result_structures import build_results, handover_inference_results
 
 # from utils.utils_analysis import prepare_quantiles
 
