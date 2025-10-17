@@ -6,15 +6,18 @@ def model_of_tuning_curve(x, parameter, n_x, n_trials, fields="all", stacked=Fal
 
     ## build tuning-curve model
     shift = n_x / 2.0
-    # parameter["A0"] = np.atleast_1d(parameter["A0"])
+    parameter["A0"] = np.atleast_1d(parameter["A0"])
 
     N_in = parameter["A0"].shape[0]
+
+    # print("params:",parameter)
     # print(f"{N_in=}, {n_trials=}, {x.shape=}")
 
     if not (fields is None) and "fields" in parameter:
 
         fields = parameter["fields"] if fields == "all" else [parameter["fields"][fields]]
         n_fields = len(fields)
+        # print(fields,n_fields)
 
         mean_model = np.zeros((n_fields + 1, N_in, n_trials, x.shape[-1]))
         mean_model[0, ...] = parameter["A0"][..., np.newaxis]
@@ -47,7 +50,6 @@ def intensity_model_from_position(x, parameter, n_x, fields=None):
 
     shift = n_x / 2.0
     intensity_model = np.full(len(x), parameter["A0"])
-
     if not (fields is None) and "fields" in parameter:
         # fields = parameter['PF'] if fields=='all' else [parameter['PF'][fields]]
 

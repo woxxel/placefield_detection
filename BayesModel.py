@@ -109,7 +109,6 @@ class HierarchicalBayesInference(HierarchicalModel):
             p_in, get_active_model=False, get_logp=False, get_tuning_curve=False
         ):
 
-            t_ref = time.time()
             ## adjust shape of incoming parameters to vectorized analysis
             if len(p_in.shape) == 1:
                 p_in = p_in[np.newaxis, :]
@@ -157,10 +156,10 @@ class HierarchicalBayesInference(HierarchicalModel):
                 infield_range = self.generate_infield_ranges(params)
                 self.timeit("infield ranges")
 
-                AIC = self.compute_AIC(logp_at_trial_and_position, infield_range)
-                self.timeit("AIC")
+                # AIC = self.compute_AIC(logp_at_trial_and_position, infield_range)
+                # self.timeit("AIC")
 
-                active_model = self.obtain_active_model(AIC)
+                active_model = self.obtain_active_model(logp_at_trial_and_position, infield_range)
                 if get_active_model:
                     return active_model
                 self.timeit("active model")
@@ -172,9 +171,9 @@ class HierarchicalBayesInference(HierarchicalModel):
             if get_logp:
                 return logp_at_trial_and_position, active_model
 
-            self.log.debug(
-                (f"{logp_at_trial_and_position.shape} {logp_at_trial_and_position=}")
-            )
+            # self.log.debug(
+            #     (f"{logp_at_trial_and_position.shape} {logp_at_trial_and_position=}")
+            # )
             logp = np.sum(
                 logp_at_trial_and_position,
                 where=active_model[..., np.newaxis],
@@ -182,7 +181,7 @@ class HierarchicalBayesInference(HierarchicalModel):
             )
             self.timeit("raw logp")
 
-            self.log.debug((f"{logp=}"))
+            # self.log.debug((f"{logp=}"))
 
             if self.N_f > 0:
                 logp -= self.calculate_logp_penalty(
@@ -194,7 +193,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                     penalties,
                 )
                 self.timeit("penalties")
-            self.log.debug((f"{logp=}"))
+            # self.log.debug((f"{logp=}"))
 
             if vectorized:
                 return logp
@@ -230,7 +229,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                         infield_range[field_model, i, trial, : upper[i, trial]] = True
         return infield_range
 
-    def obtain_active_model(self, AIC):
+    def obtain_active_model(self, logp_at_trial_and_position, infield_range):
         """
         something seems off with how area is defined and used...
         which axis should I apply reliability penalty to? how is it interpreted, if f(i,j) is the off-diagonal field? ...
@@ -238,6 +237,7 @@ class HierarchicalBayesInference(HierarchicalModel):
         ## entry 0 should be nofield model and all possible combinations of field models
         ## I'm actually not quite sure why it evolves to f**2, but it holds
         ## now, how do I properly assign IDs to to model (especially combinations)?
+        AIC = self.compute_AIC(logp_at_trial_and_position, infield_range)
 
         N_in = AIC.shape[1]
         active_model_reference = np.argmin(AIC, axis=0)
@@ -257,14 +257,17 @@ class HierarchicalBayesInference(HierarchicalModel):
             )
             active_model[-1, ...] = np.all(~active_model[:-1, ...], axis=0)
 
+        ### this also works for a single field
+        # active_model[active_model_reference[0,0,:],:,range(self.n_samples)] = True
+
         return active_model
 
+    
     def compute_AIC(self, logp_at_trial_and_position, infield_range):
         N_in = logp_at_trial_and_position.shape[1]
 
         AIC = np.zeros((self.N_f + 1, N_in, self.N_f, self.n_samples))
         for field_area in range(self.N_f):
-
             nDatapoints = infield_range[field_area, ...].sum(axis=-1)
 
             ## calculate trial-wise log-likelihoods for both models
@@ -289,6 +292,7 @@ class HierarchicalBayesInference(HierarchicalModel):
                 )
 
         return AIC
+    
 
     def calculate_logp_penalty(
         self,
@@ -297,7 +301,7 @@ class HierarchicalBayesInference(HierarchicalModel):
         logp_at_trial_and_position,
         active_model,
         infield_range,
-        penalties=["parameter_bias", "reliability", "overlap"],
+        penalties=["reliability", "overlap"],
         penalty_factor=None,
         no_go_factor=10**6,
     ):
@@ -322,105 +326,34 @@ class HierarchicalBayesInference(HierarchicalModel):
             active_model[1, active_model[-1, ...]] = True
             active_model[2, active_model[-1, ...]] = True
 
-        zeroing_penalty = np.zeros(N_in)
-        centering_penalty = np.zeros(N_in)
-
         if "parameter_bias" in penalties:
-            ## for all non-field-trials, introduce "pull" towards 0 for all parameters to avoid flat posterior
-            ### for all field-trials, enforce centering of parameters around active meta parameter
+            zeroing_penalty, centering_penalty = self.calculate_penalty_parameterbias(p_in, active_model, penalty_factor)
+        else:
+            zeroing_penalty = np.zeros(N_in)
+            centering_penalty = np.zeros(N_in)
 
-            for key in self.priors:
+        if ("overlap" in penalties):
+            overlap_penalty = self.calculate_penalty_overlap(params, infield_range, penalty_factor=penalty_factor)
+        else:
+            overlap_penalty = np.zeros(N_in)
 
-                _,f = parse_name_and_indices(key, ["field"])
-
-                ## hierarchical parameters fluctuate around meta-parameters, and should be centered around them, as well as bias towards them for non-field trials
-                if self.priors[key]["n"] > 1:
-
-                    dParam_trial_from_total = (
-                        p_in[
-                            :,
-                            self.priors[key]["idx"] : self.priors[key]["idx"]
-                            + self.priors[key]["n"],
-                        ]
-                        - p_in[:, [self.priors[key]["idx_mean"]]]
-                    ) / p_in[:, [self.priors[key]["idx_sigma"]]]
-
-                    zeroing_penalty += penalty_factor * (
-                        (dParam_trial_from_total * (~active_model[f, ...])) ** 2
-                    ).sum(axis=1)
-                    centering_penalty += (
-                        penalty_factor
-                        * ((dParam_trial_from_total * active_model[f, ...]).sum(axis=1))
-                        ** 2
-                    )
-            self.timeit("zeroing/centering penalty")
-
-        overlap_penalty = np.zeros(N_in)
-        if ("overlap" in penalties) and (self.N_f > 1):
-            overlap_range = np.all(infield_range, axis=0).sum(axis=-1)
-            for field in params["fields"]:
-                overlap_penalty += penalty_factor * norm_cdf(
-                    overlap_range - 2 * field.sigma, 0, field.sigma
-                ).sum(axis=-1)
-            self.timeit("overlap penalty")
-
-        reliability_penalty = np.zeros(N_in)
+        # print("calculating reliability penalty")
         if "reliability" in penalties:
+            reliability_penalty = self.calculate_penalty_reliability(logp_at_trial_and_position, active_model)
+        else:
+            reliability_penalty = np.zeros(N_in)
+        # print(f"reliability_penalty: {reliability_penalty}")
+        
+        lower_bound_0_penalty = self.calculate_penalty_nonegatives(params, no_go_factor)
+        ordered_fields_penalty = self.calculate_penalty_ordered_fields(params, no_go_factor)
 
-            dlogp = np.zeros((self.N_f, N_in))
-            logp_nofield = logp_at_trial_and_position[0, ...].sum(axis=-1)
-            for f in range(self.N_f):
-                logp_field = logp_at_trial_and_position[f + 1, ...].sum(axis=-1)
-                dlogp_trials = np.maximum(logp_nofield - logp_field, 0)
-                dlogp[f, :] = np.sum(
-                    dlogp_trials,
-                    where=~np.any(active_model[[f + 1, -1], ...], axis=0),
-                    axis=-1,
-                )
-            # np.maximum(dlogp,0,out=dlogp)
-            active_trials = active_model[range(1, self.N_f + 1), ...].sum(axis=-1)
-            # assert np.all(dlogp>0), f'dlogp should be positive, {dlogp=}'
-
-            # print(active_model[[1,2,3],...])
-
-            reliability = active_trials / self.n_samples
-            reliability_sigmoid = 1 - 1 / (1 + np.exp(-20 * (reliability - 0.3)))
-            reliability_penalty = (reliability_sigmoid * dlogp).sum(axis=0)
-
-            ## this is temporarily introduced - needs to be checked thoroughly!
-            reliability_penalty += (np.maximum(4-active_trials,0)/3 *dlogp).sum(axis=0)
-
-            # print(f"{reliability=}, {reliability_penalty=}")
-            # print(f"{reliability*dlogp}")
-            # reliability_penalty = penalty_factor * ((reliability>0) * (1. + (1.-reliability))).sum(axis=0)
-            # reliability_penalty = penalty_factor * (1. + (1.-reliability)).sum(axis=0)
-            self.timeit("reliability penalty")
-
-        self.log.debug(("penalty (zeroing):", zeroing_penalty))
-        self.log.debug(("penalty (centering):", centering_penalty))
-        self.log.debug(("penalty (overlap):", overlap_penalty))
-        self.log.debug(("penalty (reliability):", reliability_penalty))
+        # self.log.debug(("penalty (zeroing):", zeroing_penalty))
+        # self.log.debug(("penalty (centering):", centering_penalty))
+        # self.log.debug(("penalty (overlap):", overlap_penalty))
+        # self.log.debug(("penalty (reliability):", reliability_penalty))
         # self.log.debug(('penalty (activation):',activation_penalty))
 
         # self.log.debug(('dParams:',dParams_trial_from_total))
-
-        ## introduce penalty for parameters to be below 0
-        lower_bound_0_penalty = np.zeros(N_in)
-        for field in params["fields"]:
-            for attr in attributes(field):
-                if np.any(getattr(field,attr.name) < 0):
-                    lower_bound_0_penalty += no_go_factor * np.sum(
-                        -getattr(field,attr.name), where=getattr(field,attr.name) < 0, axis=-1
-                    )
-        self.timeit("lower_bound_0 penalty")
-
-        ordered_fields_penalty = np.zeros(N_in)
-        if self.N_f > 1:
-            ordered_fields_penalty = no_go_factor * np.maximum(
-                0, params["fields"][0].theta - params["fields"][1].theta
-            ).sum(axis=-1)
-        self.timeit("ordered fields penalty")
-
         return (
             zeroing_penalty
             + centering_penalty
@@ -429,7 +362,131 @@ class HierarchicalBayesInference(HierarchicalModel):
             + lower_bound_0_penalty
             + ordered_fields_penalty
         )
+
+    
+    def calculate_penalty_parameterbias(self, p_in, active_model, penalty_factor):
+        """ 
+        zeroing:    for all non-field-trials, introduce "pull" towards 0 for all parameters to avoid flat posterior
+        centering:  for all field-trials, enforce centering of parameters around active meta parameter
+        """
+        for key in self.priors:
+
+            _,f = parse_name_and_indices(key, ["field"])
+
+            ## hierarchical parameters fluctuate around meta-parameters, and should be centered around them, as well as bias towards them for non-field trials
+            if self.priors[key]["n"] > 1:
+
+                dParam_trial_from_total = (
+                    p_in[
+                        :,
+                        self.priors[key]["idx"] : self.priors[key]["idx"]
+                        + self.priors[key]["n"],
+                    ]
+                    - p_in[:, [self.priors[key]["idx_mean"]]]
+                ) / p_in[:, [self.priors[key]["idx_sigma"]]]
+
+                zeroing_penalty += penalty_factor * (
+                    (dParam_trial_from_total * (~active_model[f, ...])) ** 2
+                ).sum(axis=1)
+                centering_penalty += (
+                    penalty_factor
+                    * ((dParam_trial_from_total * active_model[f, ...]).sum(axis=1))
+                    ** 2
+                )
+        self.timeit("zeroing/centering penalty")
+        return zeroing_penalty, centering_penalty
+
+
+    def calculate_penalty_overlap(self, params, infield_range, penalty_factor=1.0):
+        """
+            penalizes fields that overlap too much (i.e. are not distinct enough)
+            overlap is calculated as the range of positions, in which all fields are active
+            (thus, if 2 fields are completely within each other, the penalty is maximal)
+
+            penalty is independent of current logp, as heavy improvements should still be allowed
+        """
+
+        N_in = params["A0"].shape[0]
+        penalty_offset = norm_cdf(-2,0,1)
+
+        overlap_penalty = np.zeros(N_in)
+        if self.N_f > 1:
+            overlap_range = np.all(infield_range, axis=0).sum(axis=-1).mean()
+            # print(f"overlap_range: {overlap_range}")
+            for field in params["fields"]:
+                # print(f"field:", field)
+                overlap_penalty += penalty_factor * (norm_cdf(
+                    overlap_range - 2 * field.sigma, 0, field.sigma
+                ) - penalty_offset).sum(axis=-1)
+        # print(f"overlap_penalty:",overlap_penalty)
+        self.timeit("overlap penalty")
+        return overlap_penalty
+
+
+    def calculate_penalty_nonegatives(self, params, no_go_factor=10**6):
+        
+        ## introduce penalty for parameters to be below 0
+        N_in = params["A0"].shape[0]
+        lower_bound_0_penalty = np.zeros(N_in)
+        for field in params["fields"]:
+            for attr in attributes(field):
+                if np.any(getattr(field,attr.name) < 0):
+                    lower_bound_0_penalty += no_go_factor * np.sum(
+                        -getattr(field,attr.name), where=getattr(field,attr.name) < 0, axis=-1
+                    )
+        self.timeit("lower_bound_0 penalty")
+        return lower_bound_0_penalty
+
+    def calculate_penalty_ordered_fields(self, params, no_go_factor=10**6):
+        N_in = params["A0"].shape[0]
+        ordered_fields_penalty = np.zeros(N_in)
+        if self.N_f > 1:
+            ordered_fields_penalty = no_go_factor * np.maximum(
+                0, params["fields"][0].theta - params["fields"][1].theta
+            ).sum(axis=-1)
+        self.timeit("ordered fields penalty")
+        return ordered_fields_penalty
+    
         # return zeroing_penalty, centering_penalty, activation_penalty
+
+    def calculate_penalty_reliability(self,
+            logp_at_trial_and_position, active_model,
+            threshold_active_trials = 5
+        ):
+        """
+            penalizes fields that are not reliable enough (i.e. active in too few trials by rate or absolute numbers)
+            dlogp is used as penalty baseline, effectively setting non-reliable field-logp to the value of no-field logp
+        """
+        N_in = active_model.shape[1]
+        dlogp = np.zeros((self.N_f,N_in))
+        logp_nofield = logp_at_trial_and_position[0, ...].sum(axis=-1)
+        for f in range(self.N_f):
+            logp_field = logp_at_trial_and_position[f + 1, ...].sum(axis=-1)
+
+            dlogp_trials = np.maximum(logp_field - logp_nofield, 0)
+            # dlogp[f,:] = dlogp_trials.sum()
+            dlogp[f, :] = np.sum(
+                dlogp_trials,
+                where=np.any(active_model[[f + 1, -1], ...], axis=0),
+                axis=-1,
+            )
+            # print(f"{dlogp=}")
+        active_trials = active_model[range(1, self.N_f + 1), ...].sum(axis=-1)
+        # assert np.all(dlogp>0), f'dlogp should be positive, {dlogp=}'
+
+        reliability = active_trials / self.n_samples
+        # print(f"reliability sigmoid: {reliability_sigmoid(reliability,self.n_samples,threshold_active_trials)}")
+        reliability_penalty = (
+            reliability_sigmoid(reliability,self.n_samples,threshold_active_trials)
+            # np.maximum(threshold_active_trials-active_trials,0)/threshold_active_trials * \
+            * dlogp
+        ).sum(axis=0)
+        # print(f"{reliability_penalty=}")
+
+        self.timeit("reliability penalty")
+        return reliability_penalty
+    
+    
 
     def probability_of_spike_observation(self, nu):
         ## get probability to observe N spikes (amplitude) within dwelltime for each bin in each trial
@@ -456,73 +513,14 @@ class HierarchicalBayesInference(HierarchicalModel):
             self.x_arr, params, self.n_bin, self.n_samples, fields, stacked
         )
 
-    # def from_p_to_params(self, p_in):
-    #     """
-    #     transform p_in to parameters for the model
-    #     """
-    #     params = {}
 
-    #     if self.N_f > 0:
-    #         params["fields"] = []
-    #         for _ in range(self.N_f):
-    #             params["fields"].append({})
-
-    #     for key in self.priors:
-    #         if self.priors[key]["meta"]:
-    #             continue
-
-    #         if key.startswith("fields"):
-    #             nField, key_param = key.split("_")
-    #             nField = int(nField[2:]) - 1
-    #             params["fields"][nField][key_param] = p_in[
-    #                 :,
-    #                 self.priors[key]["idx"] : self.priors[key]["idx"]
-    #                 + self.priors[key]["n"],
-    #             ]
-    #         else:
-    #             key_param = key.split("__")[0]
-    #             params[key_param] = p_in[
-    #                 :,
-    #                 self.priors[key]["idx"] : self.priors[key]["idx"]
-    #                 + self.priors[key]["n"],
-    #             ]
-
-    #     return params
-
-    # def from_results_to_params(self, results=None):
-    #     """
-    #     transform results to parameters for the model
-    #     """
-    #     results = results or self.inference_results
-    #     params = {}
-
-    #     if self.N_f > 0:
-    #         params["fields"] = []
-    #         for _ in range(self.N_f):
-    #             params["fields"].append({})
-
-    #     params["A0"] = results["fields"]["parameter"]["global"]["A0"][np.newaxis, 0]
-    #     for key in ["theta", "A", "sigma"]:
-    #         for f in range(self.N_f):
-    #             if results["fields"]["parameter"]["local"][key] is None:
-    #                 params["fields"][f][key] = results["fields"]["parameter"]["global"][
-    #                     key
-    #                 ][np.newaxis, f, 0]
-    #             else:
-    #                 params["fields"][f][key] = results["fields"]["parameter"]["local"][key][
-    #                     np.newaxis, f, :, 0
-    #                 ]
-
-    #     return params
-
-    def timeit(self, msg=None):
-        if not msg is None:  # and (self.time_ref):
-            self.log.debug(f"time for {msg}: {(time.time()-self.time_ref)*10**6}")
-
-        self.time_ref = time.time()
+def reliability_sigmoid(r,n,n_threshold):
+    return 1 - 1 / (1 + np.exp(-n * (r - n_threshold/n)))
+        
+    
 
 from .HierarchicalBayesModel.NestedSamplingMethods import run_sampling
-from .result_structures import PlaceFieldInferenceResults, handover_inference_results, build_results
+from .result_structures import PlaceFieldInferenceResults, handover_inference_results
 
 def model_comparison(
     event_counts,
@@ -530,8 +528,9 @@ def model_comparison(
     mode="dynesty",
     show_status=False,
     limit_execution_time=None,
+    nP=1
 ):
-    # t_start = time.time()
+    t_start = time.time()
 
     vectorized = mode == "ultranest"
 
@@ -583,7 +582,7 @@ def model_comparison(
                 my_prior_transform,
                 my_likelihood,
                 HBI.parameter_names_all,
-                nP=12,
+                nP=nP,
                 n_live=100, periodic=HBI.periodic,
                 mode=mode
             )
@@ -612,23 +611,24 @@ def model_comparison(
     HBI.set_priors(N_f=2)
     res.build_results(priors=HBI.priors)
     inference_results["fields"] = res.fields
-    inference_results["fields"] = handover_inference_results(inference_results["field_models"][N_f], inference_results["bayesian"]["fields"])
+    inference_results["fields"] = handover_inference_results(inference_results["field_models"][N_f], inference_results["fields"])
     # inference_results["bayesian"]["field_models"][n_field]
     # self.calculate_general_statistics()
 
         # if plot:
         #     self.display_results()
 
-    #     string_out = f"Model comparison finished after {time.time() - t_start:.2f}s with evidences: "
-    #     for f in range(2 + 1):
-    #         if not np.isnan(self.inference_results["fields"]["logz"][f, 0]):
-    #             string_out += f"\t {f=} {'*' if f==self.inference_results['fields']['n_modes'] else ''}, logz={self.inference_results['fields']['logz'][f,0]:.2f}"
-    # else:
-    #     self.calculate_general_statistics(which=["firingstats"])
+    try:
+        string_out = f"Model comparison finished after {time.time() - t_start:.2f}s with evidences: "
+        for f in range(2 + 1):
+            if not np.isnan(inference_results["field_models"]["logz"][f, 0]):
+                string_out += f"\t {f=} {'*' if f==inference_results['fields']['n_modes'] else ''}, logz={inference_results['field_models']['logz'][f,0]:.2f}"
+    except Exception as exc:
+        string_out = f"Building result string failed: {exc}"
+        # else:
+        #     self.calculate_general_statistics(which=["firingstats"])
 
-    #     string_out = "Not enough instances of activity detected"
-
-    # print(string_out)
+    print(string_out)
 
     return inference_results
 
@@ -642,8 +642,83 @@ class place_field:
     A: float
     sigma: float
     theta: float
+    reliability: float = 1.
+
+    def cast_to_array(self):
+        for attr in attributes(self):
+            setattr(self,attr.name,np.atleast_1d(getattr(self,attr.name)))
 
 
 class TimeoutException(Exception):
     def __init__(self, *args, **kwargs):
         pass
+
+
+# import math
+
+# def _phi(z):
+#     """Standard normal CDF."""
+#     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+
+# def _normal_cdf(x, mu, sigma):
+#     return _phi((x - mu) / sigma)
+
+# def _normal_pdf(x, mu, sigma):
+#     return math.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * math.sqrt(2.0 * math.pi))
+
+# def gaussian_overlap(mu1, sigma1, mu2, sigma2, *, eps=1e-12):
+#     """
+#     Overlapping coefficient (OVL) between N(mu1, sigma1^2) and N(mu2, sigma2^2).
+#     Returns a value in [0, 1]. No external dependencies.
+#     """
+#     if sigma1 <= 0 or sigma2 <= 0:
+#         raise ValueError("sigma1 and sigma2 must be positive")
+
+#     # Equal-variance shortcut (and numerically near-equal)
+#     if abs(sigma1 - sigma2) <= eps * max(sigma1, sigma2):
+#         d = abs(mu1 - mu2) / (2.0 * sigma1)
+#         return max(0.0, min(1.0, 2.0 * _phi(-d)))
+
+#     # Solve f1(x) = f2(x) for intersection points (quadratic)
+#     # ((x-m2)^2)/s2^2 - ((x-m1)^2)/s1^2 = 2 ln(s2/s1)
+#     s1, s2 = sigma1, sigma2
+#     m1, m2 = mu1, mu2
+
+#     a = 1.0 / (s2 * s2) - 1.0 / (s1 * s1)
+#     b = -2.0 * (m2 / (s2 * s2) - m1 / (s1 * s1))
+#     c = (m2 * m2) / (s2 * s2) - (m1 * m1) / (s1 * s1) - 2.0 * math.log(s2 / s1)
+
+#     # If 'a' is tiny, the curves are near-equal variance; fall back.
+#     if abs(a) < 1e-20:
+#         d = abs(mu1 - mu2) / (2.0 * ((s1 + s2) / 2.0))
+#         return max(0.0, min(1.0, 2.0 * _phi(-d)))
+
+#     disc = b * b - 4.0 * a * c
+#     if disc < 0 and disc > -1e-14:  # clamp tiny negatives due to rounding
+#         disc = 0.0
+#     if disc < 0:
+#         # Numerically weird case: densities might be almost identical; return ~1
+#         return 1.0
+
+#     sqrt_disc = math.sqrt(disc)
+#     xL = (-b - sqrt_disc) / (2.0 * a)
+#     xR = (-b + sqrt_disc) / (2.0 * a)
+#     if xL > xR:
+#         xL, xR = xR, xL
+
+#     # Decide which density is the minimum on (xL, xR) by checking the midpoint
+#     m = 0.5 * (xL + xR)
+#     f1m = _normal_pdf(m, m1, s1)
+#     f2m = _normal_pdf(m, m2, s2)
+
+#     if f1m <= f2m:
+#         # f1 is the smaller in the middle; f2 is smaller outside
+#         ovl = (_normal_cdf(xR, m1, s1) - _normal_cdf(xL, m1, s1)) \
+#             + (_normal_cdf(xL, m2, s2) + (1.0 - _normal_cdf(xR, m2, s2)))
+#     else:
+#         # swap roles
+#         ovl = (_normal_cdf(xR, m2, s2) - _normal_cdf(xL, m2, s2)) \
+#             + (_normal_cdf(xL, m1, s1) + (1.0 - _normal_cdf(xR, m1, s1)))
+
+#     # Clip to [0,1] to tame numerical noise
+#     return max(0.0, min(1.0, ovl))

@@ -6,6 +6,8 @@ from .result_structures import (extract_inference_results)
 from .utils import gauss_smooth as gauss_filter, model_of_tuning_curve
 from .BayesModel import place_field
 
+from scipy.optimize import linear_sum_assignment
+from scipy.spatial import distance
 
 def display_results(
     results,
@@ -25,68 +27,24 @@ def display_results(
     n_trials, nsteps = fields["p_x"]["local"]["theta"].shape[-2:]
     nbin = 40
 
-    groundtruth_N_f = 0
-    if groundtruth_fields:
-        groundtruth_N_f = len(groundtruth_fields["fields"])
-        field_match = np.full(groundtruth_N_f, -1, "int")
-        for f in range(fields["n_modes"]):
-            theta = fields["parameter"]["global"]["theta"][f, 0]
-            # mean[0, self.priors[f"PF{f+1}_theta__mean"]["idx"]]
+    if groundtruth_fields is not None:
+        """
+        find matching fields between inferred and groundtruth
+        """
+        # cast to array
+        if groundtruth_fields.get("fields"):
+            [field.cast_to_array() for field in groundtruth_fields["fields"]]
 
-            for f_truth, field in enumerate(groundtruth_fields["fields"]):
-
-                dTheta = abs(
-                    np.mod(theta - field["theta"] + nbin / 2.0, nbin) - nbin / 2.0
-                )
-                if dTheta <= 5.0:
-                    # print("match!", dTheta, theta, field["theta"])
-                    field_match[f_truth] = f
-
+            field_match = identify_matching_fields(
+                fields, groundtruth_fields, nbin=nbin
+            )
+        else:
+            field_match = np.array([], "int")
+        
     if not (groundtruth_activation is None):
-        trial_activation__true_positive = np.zeros((groundtruth_N_f, n_trials), "bool")
-        trial_activation__true_negative = np.zeros((groundtruth_N_f, n_trials), "bool")
-        trial_activation__false_positive = np.zeros((groundtruth_N_f, n_trials), "bool")
-        trial_activation__false_negative = np.zeros((groundtruth_N_f, n_trials), "bool")
-        for f in range(groundtruth_N_f):
-            if field_match[f] >= 0:
-                active_trials = fields["active_trials"][f, :] > 0.5
-                print(f"{active_trials=}")
-                print(f"groundtruth={groundtruth_activation[field_match[f], :]}")
 
-                trial_activation__true_positive[f, :] = (
-                    groundtruth_activation[field_match[f], :] & active_trials
-                )
-                trial_activation__true_negative[f, :] = (
-                    ~groundtruth_activation[field_match[f], :] & ~active_trials
-                )
-                trial_activation__false_positive[f, :] = (
-                    ~groundtruth_activation[field_match[f], :] & active_trials
-                )
-                trial_activation__false_negative[f, :] = (
-                    groundtruth_activation[field_match[f], :] & ~active_trials
-                )
-        print(f"{trial_activation__false_negative=}")
-        sensitivity = trial_activation__true_positive.sum(axis=1) / (
-            trial_activation__true_positive.sum(axis=1)
-            + trial_activation__false_negative.sum(axis=1)
-        )
-        specificity = trial_activation__true_negative.sum(axis=1) / (
-            trial_activation__true_negative.sum(axis=1)
-            + trial_activation__false_positive.sum(axis=1)
-        )
-
-        print(f"{sensitivity=}, {specificity=}")
-
-    if not (groundtruth_fields is None):
-        print(
-            f"A0: {groundtruth_fields['A0']} vs {fields['parameter']['global']['A0'][0]}"
-        )
-        for f in range(fields["n_modes"]):
-            if field_match[f] >= 0:
-                for key in ["A", "sigma"]:
-                    print(
-                        f"PF{f+1}_{key}: {groundtruth_fields['PF'][field_match[f]][key]} vs {fields['parameter']['global'][key][f,0]}"
-                    )
+        trial_activation, (sensitivity, specificity) = calculate_trial_activation(fields["active_trials"], groundtruth_activation, field_match)
+        
 
     fig = plt.figure(figsize=(12, 10))
     gs = fig.add_gridspec(3, 2, right=0.45)
@@ -101,13 +59,20 @@ def display_results(
     ax_theta_inactive = fig.add_subplot(gs[2, 1])
     plt.setp(ax_theta_inactive, xlabel="$\Theta$", ylabel="p($\Theta$)")
 
-    comp = not (groundtruth_fields is None)
+    comp = groundtruth_fields is not None
 
-    if comp:
+    if comp and groundtruth_fields.get("n_fields",0)>0:
         for field in groundtruth_fields["fields"]:
-            ax_activation.axhline(field["theta"], linestyle="--", color="tab:green")
+            ax_activation.axhline(field.theta, linestyle="--", color="tab:green")
 
-    col = ["r", "g"]
+    col = ["tab:blue", "tab:purple"]
+
+    markercolor = {
+        "true_positive": "tab:green",
+        "false_positive": "tab:red",
+        "false_negative": "tab:orange",
+    }
+
     if fields["n_modes"] > 0:
         for f in range(fields["n_modes"]):
             active_trials = fields["active_trials"][f, :] > 0.5
@@ -125,59 +90,21 @@ def display_results(
                 linestyle="-",
                 linewidth=0.5,
             )
-            # ax_activation.errorbar(
-            #     np.where(active_trials)[0],
-            #     theta_local[active_trials, 0],
-            #     np.abs(
-            #         theta_local[active_trials, 0] - theta_local[active_trials, 1:].T
-            #     ),
-            #     color="k",
-            # )  # ,marker='o')
 
             if comp:
-                idx_true_positives = np.where(trial_activation__true_positive[f, ...])[
-                    0
-                ]
-                # print(idx_true_positives)
-                # print(theta_vals['mean'][f,idx_true_positives])
-                ax_activation.scatter(
-                    idx_true_positives,
-                    theta_local[idx_true_positives, 0],
-                    marker="o",
-                    c="tab:green",
-                    s=60,
-                    alpha=0.6,
-                    label="true positives" if f == 0 else None,
-                )
+                for key in ["true_positive", "false_negative", "false_positive"]:
+                    idxs = np.where(trial_activation[key][f, ...])[0]
 
-                idx_false_negatives = np.where(
-                    trial_activation__false_negative[f, ...]
-                )[0]
-                ax_activation.scatter(
-                    idx_false_negatives,
-                    np.full(
-                        len(idx_false_negatives),
-                        fields["parameter"]["global"]["theta"][f, 0],
-                    ),
-                    marker="o",
-                    c="tab:orange",
-                    s=60,
-                    alpha=0.6,
-                    label="false negatives" if f == 0 else None,
-                )
+                    ax_activation.scatter(
+                        idxs,
+                        theta_local[idxs, 0],
+                        marker="o",
+                        c=markercolor[key],
+                        s=60,
+                        alpha=0.6,
+                        label=key.replace("_", " ") if f == 0 else None,
+                    )
 
-                idx_false_positives = np.where(
-                    trial_activation__false_positive[f, ...]
-                )[0]
-                ax_activation.scatter(
-                    idx_false_positives,
-                    theta_local[idx_false_positives, 0],
-                    marker="o",
-                    c="tab:red",
-                    s=60,
-                    alpha=0.6,
-                    label="false positives" if f == 0 else None,
-                )
             else:
                 idx_active = np.where(fields["active_trials"][f, :] > 0.5)[0]
                 ax_activation.scatter(
@@ -221,24 +148,28 @@ def display_results(
     plt.setp(ax_theta, xlim=[0, nbin])
     plt.setp(ax_theta_inactive, xlim=[0, nbin])
 
+    for i,(ax, label) in enumerate(zip([ax_theta, ax_theta_inactive], ["active trials", "inactive trials"])):
+        ax.legend(
+            [Line2D([], [], color=col[0])],
+            [label],
+            numpoints=1,
+            loc=1,
+            frameon=False,
+            borderpad=0.1,
+        )
+
     x_arr = fields["x"]["theta"]
     lw = 2
-    # print()
-    # fig = plt.figure(figsize=(12, 8))
 
-    markercolor = {
-        "true positives": "tab:green",
-        "false positives": "tab:red",
-        "false negatives": "tab:orange",
-    }
-
+    """
+    plot tuning curves for all trials
+    """
     ncols = 3
     nrows = max(3, int(np.ceil(n_trials / ncols)))
-
     gs_trials = fig.add_gridspec(nrows, ncols, left=0.5)
-    # plt.setp(gs_trials, xlabel="$\Theta$", ylabel="firing rate")
-    # nrows = 4 + int(np.ceil(n_trials / ncols))
-    # offset = 4 * ncols
+
+    inferred_parameter = cast_results_to_params(fields["parameter"], fields["n_modes"])
+
     for trial in range(n_trials):
         ax = fig.add_subplot(
             gs_trials[trial // ncols, trial % ncols], sharey=ax if trial > 0 else None
@@ -251,51 +182,39 @@ def display_results(
             f"trial {trial+1}", y=1.0, pad=-14, x=0.3, backgroundcolor="silver"
         )
 
-        if fields["n_modes"] > 0:
+        if fields["n_modes"] == 0:
+            plot_model(ax, inferred_parameter, None, trial, x_arr, n_trials=n_trials, lw=lw)
+        else:
 
             fields_tmp = []
             fields_label = []
-            active_trials_1 = fields["active_trials"][0, :] > 0.5
-            isfield = active_trials_1[trial]
 
-            if not comp:
-                if isfield:
-                    markercolor = "tab:green"
-                else:
-                    markercolor = None
-            elif trial_activation__true_positive[0, trial]:
-                markercolor = "tab:green"
-            elif trial_activation__false_positive[0, trial]:
-                markercolor = "tab:red"
-            elif trial_activation__false_negative[0, trial]:
-                markercolor = "tab:orange"
-            else:
-                markercolor = None
-
-            # if isfield:
-            fields_tmp.append(
-                Line2D([], [], color="white", marker="o", markerfacecolor=markercolor)
-            )
-            fields_label.append("")
-
-            if fields["n_modes"] > 1:
-                active_trials_2 = fields["active_trials"][1, :] > 0.5
-                isfield_2 = active_trials_2[trial]
-
-                if isfield_2:
-                    fields_tmp.append(
-                        Line2D(
-                            [],
-                            [],
-                            color="white",
-                            marker="o",
-                            markerfacecolor="tab:green",
-                        )
-                    )
-                    fields_label.append("")
-            else:
-                isfield_2 = False
+            isfield = np.zeros(fields["n_modes"], "bool")            
             
+            for f_gt in range(groundtruth_fields["n_fields"]):
+                
+                # print(f"trial {trial}, f_gt {f_gt}, f {field_match[f_gt]}")
+                f = field_match[f_gt]
+                active_trials = fields["active_trials"][f, :] > 0.5
+                
+                isfield[f] = active_trials[trial] if f>=0 else isfield[f]
+
+                mcol = None
+                if comp:
+                    for key in markercolor:
+                        if trial_activation[key][f_gt, trial]:
+                            mcol = markercolor[key]
+                            break
+                else:
+                    if isfield[f]:
+                        mcol = "tab:green"
+                    else:
+                        continue
+                fields_tmp.append(
+                    Line2D([], [], color="white", marker="o", markerfacecolor=mcol)
+                )
+                fields_label.append("")
+
             ax.legend(
                 fields_tmp,
                 fields_label,
@@ -303,70 +222,14 @@ def display_results(
                 loc=1,
                 frameon=False,
                 borderpad=0.1,
-                # ncols=2,
             )
+            if ~np.any(isfield):
+                plot_model(ax, inferred_parameter, None, trial, x_arr, n_trials=n_trials, lw=lw)
+            if np.all(isfield):
+                plot_model(ax, inferred_parameter, "all", trial, x_arr, n_trials=n_trials, lw=lw)
+            elif np.any(isfield):
+                plot_model(ax, inferred_parameter, np.where(isfield)[0][0], trial, x_arr, n_trials=n_trials, lw=lw)
 
-            if not isfield and not isfield_2:
-                ax.plot(
-                    x_arr,
-                    get_tuning_curve_trials(
-                        x_arr,
-                        fields["parameter"],
-                        fields["n_modes"],
-                        None,
-                    )[0, trial, :],
-                    "r",
-                    linewidth=lw,
-                )
-            if isfield and isfield_2:
-                ax.plot(
-                    x_arr,
-                    get_tuning_curve_trials(
-                        x_arr,
-                        fields["parameter"],
-                        fields["n_modes"],
-                        fields="all",
-                    )[0, trial, :],
-                    "r",
-                    linewidth=lw,
-                )
-
-            if isfield and not isfield_2:
-                ax.plot(
-                    x_arr,
-                    get_tuning_curve_trials(
-                        x_arr,
-                        fields["parameter"],
-                        fields["n_modes"],
-                        0,
-                    )[0, trial, :],
-                    "r",
-                    linewidth=lw,
-                )
-            if not isfield and isfield_2:
-                ax.plot(
-                    x_arr,
-                    get_tuning_curve_trials(
-                        x_arr,
-                        fields["parameter"],
-                        fields["n_modes"],
-                        1,
-                    )[0, trial, :],
-                    "r",
-                    linewidth=lw,
-                )
-        else:
-            ax.plot(
-                x_arr,
-                get_tuning_curve_trials(
-                    x_arr,
-                    fields["parameter"],
-                    fields["n_modes"],
-                    None,
-                )[0, trial, :],
-                "r",
-                linewidth=lw,
-            )
 
         ax.spines[["top", "right"]].set_visible(False)
         if trial % ncols > 0:
@@ -376,85 +239,153 @@ def display_results(
 
     ax_fmap = fig.add_subplot(gs[0, :])
     ax_fmap.plot(results["firingstats"]["map_rates"], "k-")
-    ax_fmap.plot(
-        x_arr,
-        get_tuning_curve_session(
-            x_arr,
-            fields["parameter"],
-            fields["n_modes"],
-            "all",
-        )[0, :, :].T,
-        "r",
-        linewidth=2,
-        label="inferred model",
-    )
-    if not (groundtruth_fields is None):
-        ax_fmap.plot(
-            x_arr,
-            np.squeeze(
-                model_of_tuning_curve(
-                    x_arr[np.newaxis, :],
-                    groundtruth_fields,
-                    nbin,
-                    1,
-                    "all",
-                )
-            ),
-            color="tab:green",
-            linestyle="--",
-            linewidth=2,
-            label="groundtruth",
-        )
+
+    plot_model(ax_fmap, inferred_parameter, "all", 0, x_arr, n_trials=n_trials, linewidth=2,color="r",label="inferred model")
+    if groundtruth_fields is not None:
+        plot_model(ax_fmap, groundtruth_fields, "all", 0, x_arr, n_trials=n_trials, linewidth=2,color="tab:green", linestyle="--", label="groundtruth")
+
     ax_fmap.legend()
     for axx in [ax_activation, ax_theta, ax_theta_inactive, ax_fmap]:
         axx.spines[["top", "right"]].set_visible(False)
 
-        # for field in groundtruth_fields["fields"]:
-        #     ax_fmap.axvline(field["theta"], linestyle="--", color="tab:green")
-    
     A0 = fields["parameter"]["global"]["A0"][0]
     A = fields["parameter"]["global"]["A"][:, 0]
 
-    if np.any(A > 0):
-        max_val = max(A0 + A) * 2
-    else:
-        max_val = max(1, A0 * 10)
+    max_val = max(A0 + A) * 2 if np.any(A > 0) else max(1, A0 * 10)
     ax.set_ylim([0, max_val])
     ax_fmap.set_ylim([0, max_val])
 
     plt.show(block=False)
 
 
-def get_tuning_curve_session(x, parameter, N_f, fields=None, nbin=40):
-
-    params = {
-        "A0": parameter["global"]["A0"][np.newaxis, 0],
-        "fields": [],
-    }
-
-    for f in range(N_f):
-        params_tmp = {}
-        for key in ["A", "sigma", "theta"]:
-            params_tmp[key] = parameter["global"][key][f, 0][..., np.newaxis]
-        params["fields"].append(place_field(**params_tmp))
-
-    n_trials = 1
-    return model_of_tuning_curve(
-        x[np.newaxis, :],
-        params,
-        nbin,
-        n_trials,
-        fields=fields,
+def plot_model(ax,parameter,which,trial,x_arr,n_trials=1,**kwargs):
+    nbins = x_arr.max() # == 40
+    ax.plot(
+        x_arr,
+        model_of_tuning_curve(
+            x_arr[np.newaxis, :],
+            parameter,
+            nbins,
+            n_trials,
+            fields=which,
+        )[0, trial, :],
+        **{**kwargs, "color": kwargs.get("color","r")},
     )
 
 
-def get_tuning_curve_trials(x, parameter, N_f, fields=None, nbin=40):
+def identify_matching_fields(fields, groundtruth_fields, nbin=40, print_info=True):
+    field_match = np.full(groundtruth_fields["n_fields"], -1, "int")
 
+    theta_gt = np.array([f.theta[0] for f in groundtruth_fields["fields"]])
+    theta_inf = fields["parameter"]["global"]["theta"][:, 0]
+
+    dTheta = distance.cdist(theta_gt[..., np.newaxis], theta_inf[...,np.newaxis])
+
+    for f in range(fields["n_modes"]):
+        matched_distance = np.nanmin(dTheta[:,f])
+        matched_field = np.nanargmin(dTheta[:,f])
+
+        # print(f"field {f}: min distance {matched_distance} at {matched_field}")
+
+        if matched_distance <= 5.0:
+            field_match[matched_field] = f
+
+    # print(field_match)
+    # print(groundtruth_fields)
+    if print_info:
+        print(
+            f"A0: {groundtruth_fields['A0']} vs {fields['parameter']['global']['A0'][0]}"
+        )
+        for f_gt in range(groundtruth_fields["n_fields"]):
+            for key in ["A", "sigma"]:
+                print(
+                    f"field {f_gt+1} {key}: {getattr(groundtruth_fields['fields'][f_gt], key)} vs {fields['parameter']['global'][key][field_match[f_gt],0]}"
+                )
+    return field_match
+
+
+def calculate_trial_activation(active_trials, active_trials_groundtruth, field_match):
+
+    """
+        implement calculating sensitivity and specificity from both fields, if only one is detected that covers both:
+        * requires "any" active trial
+        * requires checking if fields are overlapping
+    """
+    _,n_trials = active_trials_groundtruth.shape[:2]
+    N_f_gt = len(field_match)
+    trial_activation = {
+        "true_positive": np.zeros((N_f_gt, n_trials), "bool"),
+        "true_negative": np.zeros((N_f_gt, n_trials), "bool"),
+        "false_positive": np.zeros((N_f_gt, n_trials), "bool"),
+        "false_negative": np.zeros((N_f_gt, n_trials), "bool"),
+    }
+
+    join_fields = True
+    for f_gt in range(N_f_gt):
+        f = field_match[f_gt]
+        
+        if join_fields:
+            active_trials_gt = np.any(active_trials_groundtruth > 0.5,axis=0)
+        else:
+            active_trials_gt = active_trials_groundtruth[f_gt, :] > 0.5
+        if f >= 0:
+            active_trials_inf = active_trials[f, :] > 0.5
+            trial_activation["true_positive"][f, :] = (
+                active_trials_gt & active_trials_inf
+            )
+            trial_activation["true_negative"][f, :] = (
+                ~active_trials_gt & ~active_trials_inf
+            )
+            trial_activation["false_positive"][f, :] = (
+                ~active_trials_gt & active_trials_inf
+            )
+            trial_activation["false_negative"][f, :] = (
+                active_trials_gt & ~active_trials_inf
+            )
+
+    sensitivity = trial_activation["true_positive"].sum(axis=1) / (
+        trial_activation["true_positive"].sum(axis=1)
+        + trial_activation["false_negative"].sum(axis=1)
+    )
+    specificity = trial_activation["true_negative"].sum(axis=1) / (
+        trial_activation["true_negative"].sum(axis=1)
+        + trial_activation["false_positive"].sum(axis=1)
+    )
+
+    print(f"{sensitivity=}, {specificity=}")
+
+    return trial_activation, (sensitivity, specificity)
+
+
+
+# def get_tuning_curve_session(x, parameter, N_f, fields=None, nbin=40):
+
+#     params = cast_results_to_params(parameter,N_f)
+#     # params = {
+#     #     "A0": parameter["global"]["A0"][np.newaxis, 0],
+#     #     "fields": [],
+#     # }
+
+#     # for f in range(N_f):
+#     #     params_tmp = {}
+#     #     for key in ["A", "sigma", "theta"]:
+#     #         params_tmp[key] = parameter["global"][key][f, 0][..., np.newaxis]
+#     #     params["fields"].append(place_field(**params_tmp))
+
+#     n_trials = 1
+#     return model_of_tuning_curve(
+#         x[np.newaxis, :],
+#         params,
+#         nbin,
+#         n_trials,
+#         fields=fields,
+#     )
+
+def cast_results_to_params(parameter,N_f):
     params = {
         "A0": parameter["global"]["A0"][np.newaxis, 0],
         "fields": [],
     }
-
     for f in range(N_f):
         params_tmp = {}
         for key in ["A", "sigma", "theta"]:
@@ -464,12 +395,4 @@ def get_tuning_curve_trials(x, parameter, N_f, fields=None, nbin=40):
             else:
                 params_tmp[key] = parameter["local"][key][f, ..., 0]
         params["fields"].append(place_field(**params_tmp))
-
-    n_trials = parameter["local"]["theta"].shape[-2]
-    return model_of_tuning_curve(
-        x[np.newaxis, :],
-        params,
-        nbin,
-        n_trials,
-        fields=fields,
-    )
+    return params

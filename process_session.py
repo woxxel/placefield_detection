@@ -7,6 +7,8 @@ import numpy as np
 
 import logging
 
+from .BayesModel import HierarchicalBayesInference
+
 from .utils import (
     detection_parameters,
     get_reliability,
@@ -160,7 +162,7 @@ class process_session:
         print("run detection on %d neurons" % n_cells_process)
 
         ### first, run batch processing (such as stability method, unbiased MI, ...)
-        results_batch = {}
+        results_batch = {"stability": None}
         if "stability" in self.process_single_neuron.mode_place_cell_detection:
             print("run stability method")
             results_batch["stability"] = stability_method(
@@ -208,6 +210,18 @@ class process_session:
 
         # return results_tmp
 
+        prepared_activity = prepare_activity(
+            neuron_activity[0,:],
+            behavior,
+        )
+        HBI = HierarchicalBayesInference(logLevel="DEBUG")
+        HBI.prepare_data(
+            prepared_activity["map_trial_spikes"],
+            behavior["trials"]["dwelltime"],
+            iter_dims=False,
+            dimension_names=["trials", "position_bins"],
+        )
+
         results = build_results(
             n_cells=len(results_tmp),
             nbin=behavior["nbin"],
@@ -215,6 +229,7 @@ class process_session:
             N_f=2,
             hierarchical=["theta"],
             modes=unique_modes,
+            HBI=HBI,
         )
 
         for n, res in enumerate(results_tmp):
@@ -233,202 +248,6 @@ class process_session:
 
         return results
 
-    # def process_session_old(
-    #     self,
-    #     S=None,
-    #     f_max=1,
-    #     specific_n=None,
-    #     #   dataSet='OnACID_results.hdf5',
-    #     #   artificial=False,
-    #     return_results=False,
-    #     rerun=False,
-    #     mode_info="MI",
-    #     mode_MI="BAE",
-    #     mode_activity="spikes",
-    #     assignment=None,
-    # ):
-
-    #     global t_start
-    #     t_start = time.time()
-
-    #     self.f_max = f_max
-    #     self.para["modes"]["info"] = mode_info
-    #     self.para["modes"]["activity"] = mode_activity
-    #     self.tmp = {}  ## dict to store some temporary variables in
-
-    #     # if (result.status['SNR'] < 2) | (results['r_value'] < 0):
-    #     #     print('component not considered to be proper neuron')
-    #     #     return
-
-    #     calc_MI = False
-    #     MI = np.full(self.n_cells, np.nan)
-
-    #     if calc_MI:
-    #         self.unbiased_info = estimate_unbiased_information(
-    #             self.neuron_activity["qtl"], (self.behavior["binpos"] / 5).astype("int")
-    #         )
-
-    #         active_ind = self.unbiased_info["firing_statistics"][
-    #             "sufficiently_active_cells_indexes"
-    #         ]
-    #         sig_tuned_ind = self.unbiased_info["firing_statistics"][
-    #             "significantly_tuned_and_active_cells_indexes"
-    #         ]
-
-    #         bool_sig_tuned = [i in sig_tuned_ind for i in range(self.n_cells)]
-
-    #         if mode_MI == "BAE":
-    #             MI[active_ind] = self.unbiased_info["information"]["MI_BAE"].flatten()
-
-    #         elif mode_MI == "SSR":
-    #             MI[active_ind] = self.unbiased_info["information"]["MI_SSR"].flatten()
-    #     else:
-    #         bool_sig_tuned = np.full(self.n_cells, True)
-
-    #     self.bool_sig_tuned = bool_sig_tuned
-    #     self.MI = MI
-
-    #     if isinstance(specific_n, "int"):
-    #         # self.S = S[specific_n,:]
-    #         self.para["n"] = specific_n
-    #         # self.process_single_neuron.run_detection(self.neuron_activity['S'][specific_n,:])
-    #         self.process_single_neuron.run_detection(
-    #             self.neuron_activity["S"][specific_n, :],
-    #             bool_sig_tuned[specific_n],
-    #             MI[specific_n],
-    #         )
-    #         return
-
-    #     # if rerun:
-    #     #     if artificial:
-    #     #         #nDat,pathData = get_nPaths(self.para['pathSession'],'artificialData_analyzed_n')
-    #     #         #for i in range(nDat):
-
-    #     #         f = open(self.para['svname_art'],'rb')
-    #     #         PC_processed = pickle.load(f)
-    #     #         f.close()
-
-    #     #         #PC_processed = extend_dict(PC_processed,ld_tmp['fields']['parameter'].shape[0],ld_tmp)
-    #     #     else:
-    #     #         PC_processed = {}
-    #     #         PC_processed['status'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_status'])[0]+'.pkl'),squeeze_me=True)
-    #     #         PC_processed['fields'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_fields'])[0]+'.pkl'),squeeze_me=True)
-    #     #         PC_processed['firingstats'] = loadmat(os.path.join(self.para['pathSession'],os.path.splitext(self.para['svname_firingstats'])[0]+'.pkl'),squeeze_me=True)
-
-    #     #     self.para['modes']['info'] = False
-
-    #     # idx_process = np.where(np.isnan(PC_processed['status']['Bayes_factor'][:,0]))[0]
-    #     #     idx_process = np.where(PC_processed['status']['MI_value']<=0.1)[0]
-    #     #     print(idx_process)
-    #     # elif not (assignment is None):
-    #     #     idx_process = assignment
-    #     #     print(idx_process)
-    #     # else:
-
-    #     if pf_detection == "threshold":
-    #         pf_method = threshold
-    #     elif pf_detection == "bayesian":
-    #         pf_method = bayesian
-
-    #     idx_process = np.arange(self.n_cells)
-    #     n_cells_process = len(idx_process)
-
-    #     # print('in class para:',self.process_single_neuron.para)
-    #     # if n_cells_process:
-
-    #     print("run detection on %d neurons" % n_cells_process)
-
-    #     result_tmp = []
-    #     if self.para["nP"] > 0:
-    #         batchSz = 500
-    #         nBatch = n_cells_process // batchSz
-    #         with mp.Pool(self.para["nP"]) as pool:
-    #             # pool = get_context("spawn").Pool(self.para['nP'])
-
-    #             for i in range(nBatch + 1):
-    #                 idx_batch = idx_process[
-    #                     i * batchSz : min(n_cells_process, (i + 1) * batchSz)
-    #                 ]
-    #                 # result_tmp.extend(pool.starmap(self.process_single_neuron.run_detection,zip(self.neuron_activity['S'][idx_batch,:])))
-    #                 result_tmp.extend(
-    #                     pool.starmap(
-    #                         self.process_single_neuron.run_detection,
-    #                         zip(
-    #                             self.neuron_activity["S"][idx_batch, :],
-    #                             bool_sig_tuned[idx_batch],
-    #                             MI[idx_batch],
-    #                         ),
-    #                     )
-    #                 )
-    #                 print(
-    #                     "\n\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs\n"
-    #                     % (
-    #                         min(n_cells_process, (i + 1) * batchSz),
-    #                         n_cells_process,
-    #                         time.time() - t_start,
-    #                     )
-    #                 )
-    #     else:
-    #         for n0, n in enumerate(idx_process):
-    #             # result_tmp.append(self.process_single_neuron.run_detection(self.neuron_activity['S'][n,:]))
-    #             result_tmp.append(
-    #                 self.process_single_neuron.run_detection(
-    #                     self.neuron_activity["S"][n, :], bool_sig_tuned[n], MI[n]
-    #                 )
-    #             )
-    #             print(
-    #                 "\t\t\t ------ %d / %d neurons processed\t ------ \t time passed: %7.2fs"
-    #                 % (n0 + 1, n_cells_process, time.time() - t_start)
-    #             )
-
-    #     ## can't this be done more efficiently?
-    #     results = build_struct_PC_results(
-    #         self.n_cells,
-    #         self.para["nbin"],
-    #         self.behavior["trials"]["ct"],
-    #         1 + len(self.para["CI_arr"]),
-    #     )
-
-    #     # return result_tmp,results
-    #     for n in range(self.n_cells):
-    #         for key_type in result_tmp[0].keys():
-    #             for key in result_tmp[0][key_type].keys():
-    #                 if key[0] == "_":
-    #                     continue
-    #                 if rerun:
-    #                     if n in idx_process:
-    #                         n0 = np.where(idx_process == n)[0][0]
-    #                         results[key_type][key][n, ...] = result_tmp[n0][key_type][
-    #                             key
-    #                         ]
-    #                     else:
-    #                         # ((~np.isnan(PC_processed['status']['Bayes_factor'][n,0])) | (key in ['MI_value','MI_p_value','MI_z_score','Isec_value','Isec_p_value','Isec_z_score'])):# | (n>=idx_process[10])):
-    #                         results[key_type][key][n, ...] = PC_processed[key_type][
-    #                             key
-    #                         ][n, ...]
-    #                 elif not (assignment is None):
-    #                     if n < len(idx_process):
-    #                         n0 = idx_process[n]
-    #                         results[key_type][key][n0, ...] = result_tmp[n][key_type][
-    #                             key
-    #                         ]
-    #                 else:
-    #                     n0 = np.where(idx_process == n)[0][0]
-    #                     results[key_type][key][n, ...] = result_tmp[n0][key_type][key]
-
-    #     print("time passed (overall): %7.2f" % (time.time() - t_start))
-
-    #     if self.para["plt_bool"]:
-    #         self.plt_results(result_tmp[0])
-
-    #     if return_results:
-    #         return results
-    #     else:
-    #         print("saving results...")
-    #         with open(self.para["pathResults"], "wb") as f_open:
-    #             pickle.dump(results, f_open)
-
-    #         return
 
     def load_neuron_data(self, path_data):
 
@@ -465,9 +284,6 @@ class process_session:
 
         return neuron_activity, neuron_quality
 
-    # def prepare_activity(self):
-
-    # self.neuron_activity['S_active'] = S[:,self.behavior['active']]
 
     # def calc_Icorr(self, S, trials_S):
 

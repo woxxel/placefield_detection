@@ -129,10 +129,11 @@ class process_single_neuron:
 
         if "bayesian" in self.mode_place_field_detection:
 
-            inference_results = model_comparison(
+            self.place_cell_results["bayesian"] = model_comparison(
                 self.prepared_activity["map_trial_spikes"],
                 self.behavior["trials"]["dwelltime"],
-                show_status=True
+                show_status=kwargs.get("show_status", False),
+                nP=kwargs.get("nP", 1),
             )
 
             # HBI = HierarchicalBayesInference(
@@ -152,7 +153,7 @@ class process_single_neuron:
             #     show_status=show_status,
             # )
 
-            self.place_cell_results["bayesian"] = HBI.inference_results
+            #  = HBI.inference_results
 
             # print("THIS SHOULD BE CHANGED TO PLACE_FIELD_RESULTS")
             # hbm.display_results()

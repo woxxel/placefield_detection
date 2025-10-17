@@ -21,6 +21,7 @@ import multiprocessing as mp
 from functools import partial
 
 from .utils import intensity_model_from_position, lognorm_paras
+from .BayesModel import place_field
 
 
 class SurrogateData:
@@ -111,15 +112,16 @@ class SurrogateData:
             tuning_curve_parameter["A0"] = draft_para(place_field_parameter["A0"])
 
             if tuning_curve_parameter["n_fields"]:
-                tuning_curve_parameter["PF"] = []
+                tuning_curve_parameter["fields"] = []
 
             for field in range(tuning_curve_parameter["n_fields"]):
 
-                tuning_curve_parameter["PF"].append({})
+                tmp_field = {}
                 for key in ["theta", "A", "sigma", "reliability"]:
-                    tuning_curve_parameter["PF"][field][key] = draft_para(
+                    tmp_field[key] = draft_para(
                         place_field_parameter[key]
                     )  ## uniform distribution
+                tuning_curve_parameter["fields"].append(place_field(**tmp_field))
 
         elif self.options["place_cell_distribution"] == "salientgauss":
             ## gaussian around salient locations provided
@@ -264,9 +266,9 @@ def generate_activity(
 
     if tuning_curve_parameter["n_fields"] > 0:
         max_intensity = 0
-        for field in tuning_curve_parameter["PF"]:
+        for field in tuning_curve_parameter["fields"]:
             max_intensity = max(
-                max_intensity, tuning_curve_parameter["A0"] + field["A"]
+                max_intensity, tuning_curve_parameter["A0"] + field.A
             )
     else:
         max_intensity = tuning_curve_parameter["A0"]
@@ -316,8 +318,8 @@ def generate_activity(
 
             ## decide, which fields are active in this trial
             active_fields = []
-            for f, field in enumerate(tuning_curve_parameter["PF"]):
-                if random.random() < field["reliability"]:
+            for f, field in enumerate(tuning_curve_parameter["fields"]):
+                if random.random() < field.reliability:
                     active_fields.append(f)
                     field_activation[f, trial] = True
                     # ct_activate[f] += 1

@@ -18,6 +18,7 @@ class PlaceFieldInferenceResults:
         self.n_trials = kwargs.get("n_trials", 1)
         self.n_cells = kwargs.get("n_cells",1)
 
+        # print(f"initializing PlaceFieldInferenceResults for {self.n_cells} cells, {self.n_bin} bins, {self.n_trials} trials")
         # if HBI is None:
         #     self.hierarchical = kwargs.get("hierarchical", [])
         # else:
@@ -94,12 +95,12 @@ class PlaceFieldInferenceResults:
             
             if param_name in self.hierarchical:
                 base_dims += (self.n_trials,)
-                self.fields["parameter"]["local"][param_name] = np.zeros(base_dims + (3,))
-                self.fields["p_x"]["local"][param_name] = np.zeros(base_dims + (n,))
+                self.fields["parameter"]["local"][param_name] = np.full(base_dims + (3,), np.nan)
+                self.fields["p_x"]["local"][param_name] = np.full(base_dims + (n,), np.nan)
             else:
-                self.fields["parameter"]["global"][param_name] = np.zeros(base_dims + (3,))
-                self.fields["p_x"]["global"][param_name] = np.zeros(base_dims + (n,))
-            
+                self.fields["parameter"]["global"][param_name] = np.full(base_dims + (3,), np.nan)
+                self.fields["p_x"]["global"][param_name] = np.full(base_dims + (n,), np.nan)
+
             # print(f"done building storage for {key}, {param_name}, {self.fields['parameter']['global'].get(param_name, None)},")
 
 
@@ -128,9 +129,9 @@ class PlaceFieldInferenceResults:
             # print(f"storing {key}, {param_name}, field={trials}")
             # if self.priors[param_name]["n"] > 1:
             if trial is not None:
-                self.store_local_parameters(key, key_idx)
+                self.store_local_parameters(key, key_idx, periodic=periodic[key_idx])
             else:
-                self.store_global_parameters(key, key_idx)
+                self.store_global_parameters(key, key_idx, periodic=periodic[key_idx])
 
         if logp is not None:
             self.calculate_active_trials(logp)
@@ -322,6 +323,8 @@ def build_results(n_cells=1, n_bin=40, n_trials=None, modes=[], **kwargs):
         results[mode] = build_mode_results(
             n_cells=n_cells,
             mode=mode,
+            n_trials=n_trials,
+            n_bin=n_bin,
             **kwargs,
         )
     return results
@@ -340,12 +343,16 @@ def build_mode_results(
     if mode == "bayesian":
         # assert (HBI := kwargs.get("HBI", None)) is not None, "HBI model must be provided for Bayesian inference results."
         results["field_models"] = {}
-        # for n in range(3):
-        #     HBI.set_priors(N_f=n)
-        #     PFI = PlaceFieldInferenceResults(n_cells=n_cells, **kwargs)
-        #     PFI.build_results(priors=HBI.priors)
-        #     results["field_models"][n] = PFI.fields
+        if (HBI := kwargs.get("HBI", None)) is not None:
+            for n in range(kwargs.get("N_f",2)+1):
+                HBI.set_priors(N_f=n)
+                PFI = PlaceFieldInferenceResults(n_cells=n_cells, **kwargs)
+                PFI.build_results(priors=HBI.priors)
+                results["field_models"][n] = PFI.fields
 
+            PFI.build_results(priors=HBI.priors)
+            results["fields"] = PFI.fields
+                
         # PFI = PlaceFieldInferenceResults(n_cells=n_cells,**kwargs)
         # results["fields"] = PFI.fields
 
@@ -388,6 +395,7 @@ def handover_inference_results(
         
         if isinstance(results_source[key], dict):
             # print(f"descending into {key}")
+            # print(results_target.get(key))
             results_target[key] = handover_inference_results(
                 results_source[key], results_target[key], idx
             )
