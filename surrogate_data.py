@@ -16,7 +16,7 @@
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
-import random, time, tqdm
+import random, time#, tqdm
 import multiprocessing as mp
 from functools import partial
 
@@ -155,7 +155,7 @@ class SurrogateData:
         else:
             ### generate activity for neurons
 
-            for n, tcp in tqdm.tqdm(enumerate(self.tuning_curve_parameter)):
+            for n, tcp in enumerate(self.tuning_curve_parameter):
 
                 self.activity[n, :], self.field_activation[n, : tcp["n_fields"], :] = (
                     generate_activity_fun(tcp, plt_bool=False)
