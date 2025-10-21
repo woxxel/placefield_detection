@@ -17,8 +17,10 @@ from .utils import (
     # build_struct_PC_results,
     prepare_behavior_from_file,
     prepare_activity,
-    load_dict_from_hdf5,
+    # load_dict_from_hdf5,
 )
+
+from caiman.utils.utils import load_dict_from_hdf5
 from .process_single_neuron import process_single_neuron
 
 from .alternative_detection_methods import stability_method
