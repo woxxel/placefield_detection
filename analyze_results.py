@@ -18,12 +18,10 @@ def display_results(
 
     if not (idx is None):
         results = extract_inference_results(results, idx)
-    
-    # print(results.keys())
-    # print(results)
+
 
     fields = results["bayesian"]["fields"]
-    # print(fields)
+
     n_trials, nsteps = fields["p_x"]["local"]["theta"].shape[-2:]
     nbin = 40
 
@@ -169,7 +167,7 @@ def display_results(
     gs_trials = fig.add_gridspec(nrows, ncols, left=0.5)
 
     inferred_parameter = cast_results_to_params(fields["parameter"], fields["n_modes"])
-
+    print(inferred_parameter)
     for trial in range(n_trials):
         ax = fig.add_subplot(
             gs_trials[trial // ncols, trial % ncols], sharey=ax if trial > 0 else None
@@ -191,29 +189,40 @@ def display_results(
 
             isfield = np.zeros(fields["n_modes"], "bool")            
             
-            for f_gt in range(groundtruth_fields["n_fields"]):
-                
-                # print(f"trial {trial}, f_gt {f_gt}, f {field_match[f_gt]}")
-                f = field_match[f_gt]
-                active_trials = fields["active_trials"][f, :] > 0.5
-                
-                isfield[f] = active_trials[trial] if f>=0 else isfield[f]
+            if groundtruth_fields is not None:
+                for f_gt in range(groundtruth_fields["n_fields"]):
+                    
+                    # print(f"trial {trial}, f_gt {f_gt}, f {field_match[f_gt]}")
+                    f = field_match[f_gt]
+                    active_trials = fields["active_trials"][f, :] > 0.5
+                    
+                    isfield[f] = active_trials[trial] if f>=0 else isfield[f]
 
-                mcol = None
-                if comp:
-                    for key in markercolor:
-                        if trial_activation[key][f_gt, trial]:
-                            mcol = markercolor[key]
-                            break
-                else:
-                    if isfield[f]:
-                        mcol = "tab:green"
+                    mcol = None
+                    if comp:
+                        for key in markercolor:
+                            if trial_activation[key][f_gt, trial]:
+                                mcol = markercolor[key]
+                                break
                     else:
-                        continue
-                fields_tmp.append(
-                    Line2D([], [], color="white", marker="o", markerfacecolor=mcol)
-                )
-                fields_label.append("")
+                        if isfield[f]:
+                            mcol = "tab:green"
+                        else:
+                            continue
+                    fields_tmp.append(
+                        Line2D([], [], color="white", marker="o", markerfacecolor=mcol)
+                    )
+                    fields_label.append("")
+            else:
+                for f in range(fields["n_modes"]):
+                    active_trials = fields["active_trials"][f, :] > 0.5
+                    isfield[f] = active_trials[trial]
+
+                    if isfield[f]:
+                        fields_tmp.append(
+                            Line2D([], [], color="white", marker="o", markerfacecolor="tab:green")
+                        )
+                        fields_label.append("")
 
             ax.legend(
                 fields_tmp,
@@ -240,6 +249,7 @@ def display_results(
     ax_fmap = fig.add_subplot(gs[0, :])
     ax_fmap.plot(results["firingstats"]["map_rates"], "k-")
 
+    inferred_parameter = cast_results_to_params(fields["parameter"], fields["n_modes"],meta=True)
     plot_model(ax_fmap, inferred_parameter, "all", 0, x_arr, n_trials=n_trials, linewidth=2,color="r",label="inferred model")
     if groundtruth_fields is not None:
         plot_model(ax_fmap, groundtruth_fields, "all", 0, x_arr, n_trials=n_trials, linewidth=2,color="tab:green", linestyle="--", label="groundtruth")
@@ -357,31 +367,7 @@ def calculate_trial_activation(active_trials, active_trials_groundtruth, field_m
     return trial_activation, (sensitivity, specificity)
 
 
-
-# def get_tuning_curve_session(x, parameter, N_f, fields=None, nbin=40):
-
-#     params = cast_results_to_params(parameter,N_f)
-#     # params = {
-#     #     "A0": parameter["global"]["A0"][np.newaxis, 0],
-#     #     "fields": [],
-#     # }
-
-#     # for f in range(N_f):
-#     #     params_tmp = {}
-#     #     for key in ["A", "sigma", "theta"]:
-#     #         params_tmp[key] = parameter["global"][key][f, 0][..., np.newaxis]
-#     #     params["fields"].append(place_field(**params_tmp))
-
-#     n_trials = 1
-#     return model_of_tuning_curve(
-#         x[np.newaxis, :],
-#         params,
-#         nbin,
-#         n_trials,
-#         fields=fields,
-#     )
-
-def cast_results_to_params(parameter,N_f):
+def cast_results_to_params(parameter,N_f,meta=False):
     params = {
         "A0": parameter["global"]["A0"][np.newaxis, 0],
         "fields": [],
@@ -390,7 +376,7 @@ def cast_results_to_params(parameter,N_f):
         params_tmp = {}
         for key in ["A", "sigma", "theta"]:
 
-            if parameter["local"].get(key) is None:
+            if parameter["local"].get(key) is None or meta:
                 params_tmp[key] = parameter["global"][key][f, 0][..., np.newaxis]
             else:
                 params_tmp[key] = parameter["local"][key][f, ..., 0]

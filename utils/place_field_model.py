@@ -1,5 +1,5 @@
 import numpy as np
-
+from scipy.special import factorial as sp_factorial
 
 def model_of_tuning_curve(x, parameter, n_x, n_trials, fields="all", stacked=False):
     # : int | str | None
@@ -17,7 +17,6 @@ def model_of_tuning_curve(x, parameter, n_x, n_trials, fields="all", stacked=Fal
 
         fields = parameter["fields"] if fields == "all" else [parameter["fields"][fields]]
         n_fields = len(fields)
-        # print(fields,n_fields)
 
         mean_model = np.zeros((n_fields + 1, N_in, n_trials, x.shape[-1]))
         mean_model[0, ...] = parameter["A0"][..., np.newaxis]
@@ -61,3 +60,10 @@ def intensity_model_from_position(x, parameter, n_x, fields=None):
                 / (2 * field.sigma ** 2)
             )
     return intensity_model
+
+
+def poisson_spikes(nu,N,T_total,log=False):
+    if log:
+        return N*np.log(nu*T_total) - np.log(sp_factorial(N)) - nu*T_total
+    else:
+        return np.exp(N*np.log(nu*T_total) - np.log(sp_factorial(N)) - nu*T_total)

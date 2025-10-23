@@ -1,19 +1,30 @@
-import logging, time, os, warnings, signal
+import logging, time, warnings, signal
 import numpy as np
-from scipy.special import factorial as sp_factorial, erfinv, erf
+from scipy.special import factorial as sp_factorial
 
 from scipy.stats import chi2
 
 from dataclasses import dataclass, fields as attributes
 
 from .HierarchicalBayesModel import HierarchicalModel
-from .HierarchicalBayesModel.structures import build_distr_structure_from_params, build_key, prior_structure, halfnorm_ppf, norm_ppf, bounded_flat, parse_name_and_indices
+from .HierarchicalBayesModel.structures import (
+    build_distr_structure_from_params,
+    build_key,
+    prior_structure,
+    parse_name_and_indices,
+)
+from .HierarchicalBayesModel.functions import (
+    halfnorm_ppf,
+    norm_ppf,
+    bounded_flat,
+    norm_cdf,
+)
+
 from .HierarchicalBayesModel.NestedSamplingMethods import run_sampling
 
-from .utils import model_of_tuning_curve
-# from .result_structures import build_inference_results
+from .utils import model_of_tuning_curve, poisson_probability
 
-os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["OMP_NUM_THREADS"] = "1"
 logging.basicConfig(level=logging.ERROR)
 
 warnings.filterwarnings("ignore")
@@ -71,11 +82,13 @@ class HierarchicalBayesInference(HierarchicalModel):
                 )
                 self.priors_init[build_key("theta", "field", f)] = prior_structure(
                     norm_ppf,
-                    mean=prior_structure(bounded_flat, low=0, high=self.n_bin,periodic=True),
+                    mean=prior_structure(
+                        bounded_flat, low=0, high=self.n_bin, periodic=True
+                    ),
                     sigma=prior_structure(halfnorm_ppf, loc=0, scale=self.n_bin / 20.0),
                     label=f"$\\theta_{f}$",
                     shape=(self.n_samples,),
-                    periodic=True,
+                    periodic=[0, self.n_bin],
                 )
 
             # assert (
@@ -262,7 +275,6 @@ class HierarchicalBayesInference(HierarchicalModel):
 
         return active_model
 
-    
     def compute_AIC(self, logp_at_trial_and_position, infield_range):
         N_in = logp_at_trial_and_position.shape[1]
 
@@ -292,7 +304,6 @@ class HierarchicalBayesInference(HierarchicalModel):
                 )
 
         return AIC
-    
 
     def calculate_logp_penalty(
         self,
@@ -343,7 +354,7 @@ class HierarchicalBayesInference(HierarchicalModel):
         else:
             reliability_penalty = np.zeros(N_in)
         # print(f"reliability_penalty: {reliability_penalty}")
-        
+
         lower_bound_0_penalty = self.calculate_penalty_nonegatives(params, no_go_factor)
         ordered_fields_penalty = self.calculate_penalty_ordered_fields(params, no_go_factor)
 
@@ -363,7 +374,6 @@ class HierarchicalBayesInference(HierarchicalModel):
             + ordered_fields_penalty
         )
 
-    
     def calculate_penalty_parameterbias(self, p_in, active_model, penalty_factor):
         """ 
         zeroing:    for all non-field-trials, introduce "pull" towards 0 for all parameters to avoid flat posterior
@@ -396,7 +406,6 @@ class HierarchicalBayesInference(HierarchicalModel):
         self.timeit("zeroing/centering penalty")
         return zeroing_penalty, centering_penalty
 
-
     def calculate_penalty_overlap(self, params, infield_range, penalty_factor=1.0):
         """
             penalizes fields that overlap too much (i.e. are not distinct enough)
@@ -422,9 +431,8 @@ class HierarchicalBayesInference(HierarchicalModel):
         self.timeit("overlap penalty")
         return overlap_penalty
 
-
     def calculate_penalty_nonegatives(self, params, no_go_factor=10**6):
-        
+
         ## introduce penalty for parameters to be below 0
         N_in = params["A0"].shape[0]
         lower_bound_0_penalty = np.zeros(N_in)
@@ -432,7 +440,9 @@ class HierarchicalBayesInference(HierarchicalModel):
             for attr in attributes(field):
                 if np.any(getattr(field,attr.name) < 0):
                     lower_bound_0_penalty += no_go_factor * np.sum(
-                        -getattr(field,attr.name), where=getattr(field,attr.name) < 0, axis=-1
+                        -getattr(field, attr.name),
+                        where=getattr(field, attr.name) < 0,
+                        axis=-1,
                     )
         self.timeit("lower_bound_0 penalty")
         return lower_bound_0_penalty
@@ -446,7 +456,7 @@ class HierarchicalBayesInference(HierarchicalModel):
             ).sum(axis=-1)
         self.timeit("ordered fields penalty")
         return ordered_fields_penalty
-    
+
         # return zeroing_penalty, centering_penalty, activation_penalty
 
     def calculate_penalty_reliability(self,
@@ -485,8 +495,6 @@ class HierarchicalBayesInference(HierarchicalModel):
 
         self.timeit("reliability penalty")
         return reliability_penalty
-    
-    
 
     def probability_of_spike_observation(self, nu):
         ## get probability to observe N spikes (amplitude) within dwelltime for each bin in each trial
@@ -516,8 +524,7 @@ class HierarchicalBayesInference(HierarchicalModel):
 
 def reliability_sigmoid(r,n,n_threshold):
     return 1 - 1 / (1 + np.exp(-n * (r - n_threshold/n)))
-        
-    
+
 
 from .HierarchicalBayesModel.NestedSamplingMethods import run_sampling
 from .result_structures import PlaceFieldInferenceResults, handover_inference_results
@@ -566,12 +573,12 @@ def model_comparison(
     previous_logz = -np.inf
     for n_field in range(2 + 1):
         if show_status:
-            print(f"\n{n_field=}\n")
+            print(f"\n{n_field=}")
 
         try:
             if limit_execution_time:
                 signal.alarm(limit_execution_time)
-            
+
             HBI.set_priors(N_f=n_field)
             res.build_results(HBI.priors)
 
@@ -586,7 +593,12 @@ def model_comparison(
                 n_live=100, periodic=HBI.periodic,
                 mode=mode
             )
-            res.store_inference_results(tmp_results,HBI.parameter_names_all,HBI.periodic,HBI.set_logp_func(vectorized=False))    # this includes calculation of reliability and active trials
+            res.store_inference_results(
+                tmp_results,
+                HBI.parameter_names_all,
+                HBI.periodic_boundaries,
+                HBI.set_logp_func(vectorized=False),
+            )  # this includes calculation of reliability and active trials
 
             inference_results["field_models"][n_field] = res.fields
             # handover_inference_results(res.fields, inference_results["bayesian"]["field_models"][n_field])
@@ -607,7 +619,7 @@ def model_comparison(
         except Exception as exc:
             print("Exception:", exc)
             break
-        
+
     HBI.set_priors(N_f=2)
     res.build_results(priors=HBI.priors)
     inference_results["fields"] = res.fields
@@ -615,8 +627,8 @@ def model_comparison(
     # inference_results["bayesian"]["field_models"][n_field]
     # self.calculate_general_statistics()
 
-        # if plot:
-        #     self.display_results()
+    # if plot:
+    #     self.display_results()
 
     try:
         string_out = f"Model comparison finished after {time.time() - t_start:.2f}s with evidences: "
@@ -631,10 +643,6 @@ def model_comparison(
     print(string_out)
 
     return inference_results
-
-
-def norm_cdf(x, mu, sigma):
-    return 0.5 * (1.0 + erf((x - mu) / (np.sqrt(2) * sigma)))
 
 
 @dataclass

@@ -45,34 +45,6 @@ def prepare_quantiles(C, bh_active, f=15.0, qtl_steps=4):
     return activity["qtl"]
 
 
-# def get_spikeNr(data):
-
-#     if np.count_nonzero(data) == 0:
-#         return 0, np.NaN, np.NaN
-#     else:
-#         md = calculate_hsm(data, True)
-#         #  Find the mode
-
-#         # only consider values under the mode to determine the noise standard deviation
-#         ff1 = data - md
-#         ff1 = -ff1 * (ff1 < 0)
-
-#         # compute 25 percentile
-#         ff1.sort()
-#         ff1[ff1 == 0] = np.NaN
-#         Ns = round((ff1 > 0).sum() * 0.5)  # .astype('int')
-
-#         # approximate standard deviation as iqr/1.349
-#         iqr_h = ff1[-Ns]
-#         sd_r = 2 * iqr_h / 1.349
-#         data_thr = md + 2 * sd_r
-#         spikeNr = np.floor(data / data_thr)  # .sum()
-#         return spikeNr, md, sd_r
-
-
-# from scipy._lib._array_api import array_namespace, size as xp_size
-
-
 def _circfuncs_common(samples, high, low):
     # xp = array_namespace(samples) if xp is None else xp
 
@@ -91,7 +63,6 @@ def _circfuncs_common(samples, high, low):
 def circmean(
     samples, weights=1.0, high=2 * np.pi, low=0, axis=None, nan_policy="propagate"
 ):
-
     # xp = array_namespace(samples)
     # Needed for non-NumPy arrays to get appropriate NaN result
     # Apparently atan2(0, 0) is 0, even though it is mathematically undefined

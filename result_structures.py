@@ -1,9 +1,7 @@
 import numpy as np
-from scipy.ndimage import gaussian_filter1d as gauss_filter
-from scipy.interpolate import interp1d
+from .HierarchicalBayesModel.NestedSamplingMethods import get_single_posterior_from_samples, get_samples_from_results
 
 from .HierarchicalBayesModel.structures import parse_name_and_indices
-from .utils import circmean as weighted_circmean
 
 """
 TODO:
@@ -112,13 +110,10 @@ class PlaceFieldInferenceResults:
 
     def store_inference_results(self, results, parameter_names, periodic=None, logp=None, mode="dynesty"):
 
-        # self.posterior = self.build_posterior(results,n_steps=n_steps, mode="dynesty")
         periodic = periodic if periodic is not None else [False]*len(parameter_names)
         
-        self.posterior = {
-            "samples": results.samples if mode=="dynesty" else results["weighted_samples"]["points"],
-            "weights": results.importance_weights() if mode=="dynesty" else results["weighted_samples"]["weights"]
-        }
+        self.samples = get_samples_from_results(results, mode=mode)
+        
         self.fields["logz"][0] = results["logz"][-1]
         self.fields["logz"][1] = results["logzerr"][-1]
 
@@ -173,10 +168,10 @@ class PlaceFieldInferenceResults:
         # my_logp = self.set_logp_func(penalties=["overlap", "reliability"])
 
         # for active trial calculation, take into account the samples part of the posterior that contribute 95% of the probability mass (could sort weights before doing so, but should give same or similar results in all cases)
-        considered_idx = np.where(self.posterior["weights"].cumsum() > cum_posterior_level)[0]
+        considered_idx = np.where(self.samples["weights"].cumsum() > cum_posterior_level)[0]
         N_draws = len(considered_idx)
         active_model = logp(
-            self.posterior["samples"][considered_idx[0]:, :],
+            self.samples["samples"][considered_idx[0]:, :],
             get_active_model=True,
         )
 
@@ -190,23 +185,13 @@ class PlaceFieldInferenceResults:
             ].sum(axis=0)
         self.fields["active_trials"] /= N_draws
 
+
     def calculate_field_reliability(self):
         
         self.fields["reliability"] = (
             self.fields["active_trials"].sum(axis=1)
             / self.n_trials
         )
-
-    # def build_posterior(self, results, smooth_sigma=1, n_steps=100, mode="dynesty"):
-        
-    #     self.set_posterior_arrays(n_steps=n_steps)
-    #     posterior = {}
-    #     for i, key in enumerate(self.parameter_names_all):
-    #         posterior[key] = self.build_posterior_single(results, key, periodic=self.periodic[i], smooth_sigma=smooth_sigma, mode=mode)
-    #     posterior["samples"] = results.samples if mode=="dynesty" else results["weighted_samples"]["points"]
-    #     posterior["weights"] = results.importance_weights() if mode=="dynesty" else results["weighted_samples"]["weights"]
-
-    #     return posterior
 
 
     def set_posterior_arrays(self, n_steps=100):
@@ -222,78 +207,12 @@ class PlaceFieldInferenceResults:
             self.posterior_arrays["theta_mean"] = self.posterior_arrays["theta"]
             self.posterior_arrays["theta_sigma"] = self.posterior_arrays["sigma"]
 
-    def build_posterior_single(self, key, key_idx, periodic=False, smooth_sigma=1, mode="dynesty"):
+    def build_posterior_single(self, key, key_idx, periodic=False):
 
         param_name, _ = parse_name_and_indices(key, ["field",""])
         # i = self.parameter_names_all.index(key)
 
-        posterior = {}
-
-        samp = self.posterior["samples"][:,key_idx]
-        weights = self.posterior["weights"]
-        # if mode=="dynesty":
-        #     samp = results.samples[:, i]
-        #     weights = results.importance_weights()
-        # else:
-        #     samp = results["weighted_samples"]["points"][:, i]
-        #     weights = results["weighted_samples"]["weights"]
-
-
-        qs = [0.001, 0.05, 0.341, 0.5, 0.841, 0.95, 0.999]
-        
-        if isinstance(periodic, list):
-            low,high = periodic
-            diff = high - low
-        # if (param_name == "theta") and (key_stat != "sigma"):
-            # print("wrap theta")
-            mean = weighted_circmean(samp, weights=weights, low=low, high=high)
-            shift_from_center = (mean - low - diff) / 2.0
-
-            samp[samp < np.mod(shift_from_center - low, diff)] += low + diff
-        else:
-            mean = (samp * weights).sum()
-
-
-        idx_sorted = np.argsort(samp)
-        samples_sorted = samp[idx_sorted]
-
-        # get corresponding weights
-        sw = weights[idx_sorted]
-
-        cumsw = np.cumsum(sw)
-        quants = np.interp(qs, cumsw, samples_sorted)
-
-        # nsteps = 101
-        # low, high = quants[[0, -1]]
-        # x = np.linspace(low, high, nsteps)
-        # print(f"building posterior for {key}, {param_name}, periodic={periodic}, mean={mean}")
-        x = self.posterior_arrays[param_name]
-
-        f = interp1d(
-            np.mod(samples_sorted, self.n_bin) if periodic else samples_sorted,
-            cumsw, 
-            bounds_error=False, 
-            fill_value="extrapolate"
-        )
-
-        posterior.update({
-            "CI": np.mod(quants[1:-1], self.n_bin),
-            "mean": mean,
-            "p_x": (
-                ## cdf makes jump at wrap-point, resulting in a single negative value. "Maximum" fixes this, but is not ideal
-                np.maximum(
-                    0,
-                    (
-                        gauss_filter(f(x[1:]) - f(x[:-1]), smooth_sigma)
-                        if smooth_sigma > 0
-                        else f(x[1:]) - f(x[:-1])
-                    ),
-                )
-            ),
-        })
-        return posterior
-
-
+        return get_single_posterior_from_samples(self.samples["samples"][:,key_idx],self.samples["weights"],periodic=periodic,x=self.posterior_arrays[param_name])
 
 
 def build_results(n_cells=1, n_bin=40, n_trials=None, modes=[], **kwargs):

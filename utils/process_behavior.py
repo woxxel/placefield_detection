@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 from scipy import signal
 from scipy.ndimage import binary_opening, gaussian_filter1d as gauss_filter
 
-from .utils_various import load_data, gauss_smooth
+from .utils_various import gauss_smooth
+from .utils_io import load_data
 
 def prepare_behavior(
     position: np.ndarray,
