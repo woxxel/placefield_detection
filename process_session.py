@@ -17,10 +17,9 @@ from .utils import (
     # build_struct_PC_results,
     prepare_behavior_from_file,
     prepare_activity,
-    # load_dict_from_hdf5,
 )
 
-from caiman.utils.utils import load_dict_from_hdf5
+from .utils import load_data
 from .process_single_neuron import process_single_neuron
 
 from .alternative_detection_methods import stability_method
@@ -253,7 +252,7 @@ class process_session:
     def load_neuron_data(self, path_data):
 
         ## load activity data from CaImAn results
-        ld = load_dict_from_hdf5(path_data)
+        ld = load_data(path_data)
 
         # activity = {}
         # activity["C"] = ld["C"]

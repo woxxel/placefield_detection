@@ -15,8 +15,6 @@ from scipy.spatial.distance import squareform
 import numpy as np
 import matplotlib.pyplot as plt
 
-# from caiman.utils.utils import save_dict_to_hdf5, load_dict_from_hdf5
-
 
 def get_nPaths(path, pathStr):
 

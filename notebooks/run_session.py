@@ -7,7 +7,6 @@ if not root_dir in sys.path:
 
 # import multiprocessing as mp
 # mp.set_start_method("fork", force=True)
-# from caiman.utils.utils import load_dict_from_hdf5
 # from matplotlib import pyplot as plt
 
 from placefield_detection.utils import prepare_behavior_from_file
