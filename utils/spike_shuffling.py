@@ -31,146 +31,169 @@
 ###   written by A.Schmidt, last reviewed on January, 22nd, 2020
 
 import numpy as np
+
 # import matplotlib.pyplot as plt
-#from numba import jit
-
-#@jit
-def shuffling(mode,shuffle_peaks,**kwargs):
-  
-  if mode == 'shift':
-    
-    break_points = kwargs['break_points'] if 'break_points' in kwargs else None
-    [new_spike_train,tmp] = shift_spikes(kwargs['spike_train'],break_points)
-    if shuffle_peaks:
-      spike_times = np.where(new_spike_train)[0]
-      spikes = new_spike_train[spike_times]
-      new_spike_train[spike_times] = spikes[np.random.permutation(len(spike_times))]        ## shuffle spike numbers
-    
-  elif mode == 'dither':
-    
-    assert len(args)>=2, "You did not provide enough input. Please check the function description for further information."
-    [spike_times,spikes,T,ISI,w] = get_input_dither(kwargs)
-    
-    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks)
-    
-  elif mode == 'dithershift':
-    
-    assert len(args)>=4, "You did not provide enough input. Please check the function description for further information."
-    [spike_times,spikes,T,ISI,w] = get_input_dither(kwargs)
-    
-    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks)
-    [new_spike_train,shift] = shift_spikes(new_spike_train)
-    
-  elif mode == 'dsr':
-  
-    print('not yet implemented')
-    new_spike_train = np.NaN
-    
-  
-  #plt = false;
-  #if plt && strcmp(mode,'dithershift')
-    
-    #if ~exist('spike_train','var')
-      #spike_train = zeros(1,T);
-      #spike_train(spike_times) = spikes;
-    #end
-    #ISI = get_ISI(spike_train);
-    #newISI = get_ISI(new_spike_train);
-    
-    #figure('position',[500 500 1200 900])
-    #subplot(3,1,1)
-    #plot(spike_train)
-    #subplot(3,1,2)
-    #plot(new_spike_train)
-    #title('new spike train')
-    
-    #subplot(3,2,5)
-    #hold on
-    #histogram(log10(ISI),linspace(-2,2,51),'FaceColor','b')
-    #histogram(log10(newISI),linspace(-2,2,51),'FaceColor','r')
-    #hold off
-    
-    #waitforbuttonpress;
-  #end
-  return new_spike_train
+# from numba import jit
 
 
+# @jit
+def shuffling(mode, shuffle_peaks, **kwargs):
 
-def shift_spikes(spike_train,break_points=None):
-  
-  if not (break_points is None):
-    shuffled_spike_train = np.hstack([shift_spikes(spike_train[start:end])[0] for start,end in zip(break_points[:-1],break_points[1:])])
-    shift = None
-  else:
-    shuffled_spike_train = spike_train.copy()
+    if mode == "shift":
 
-  shift = np.random.randint(np.max([1,len(shuffled_spike_train)]))
-  shuffled_spike_train = np.concatenate([shuffled_spike_train[shift:],shuffled_spike_train[:shift]])    ## shift spike train - actually faster than roll
-  return shuffled_spike_train,shift
+        break_points = kwargs["break_points"] if "break_points" in kwargs else None
+        [new_spike_train, tmp] = shift_spikes(kwargs["spike_train"], break_points)
+        if shuffle_peaks:
+            spike_times = np.where(new_spike_train)[0]
+            spikes = new_spike_train[spike_times]
+            new_spike_train[spike_times] = spikes[
+                np.random.permutation(len(spike_times))
+            ]  ## shuffle spike numbers
+
+    elif mode == "dither":
+
+        assert (
+            len(args) >= 2
+        ), "You did not provide enough input. Please check the function description for further information."
+        [spike_times, spikes, T, ISI, w] = get_input_dither(kwargs)
+
+        new_spike_train = dither_spikes(spike_times, spikes, T, ISI, w, shuffle_peaks)
+
+    elif mode == "dithershift":
+
+        assert (
+            len(args) >= 4
+        ), "You did not provide enough input. Please check the function description for further information."
+        [spike_times, spikes, T, ISI, w] = get_input_dither(kwargs)
+
+        new_spike_train = dither_spikes(spike_times, spikes, T, ISI, w, shuffle_peaks)
+        [new_spike_train, shift] = shift_spikes(new_spike_train)
+
+    elif mode == "dsr":
+
+        print("not yet implemented")
+        new_spike_train = np.nan
+
+    # plt = false;
+    # if plt && strcmp(mode,'dithershift')
+
+    # if ~exist('spike_train','var')
+    # spike_train = zeros(1,T);
+    # spike_train(spike_times) = spikes;
+    # end
+    # ISI = get_ISI(spike_train);
+    # newISI = get_ISI(new_spike_train);
+
+    # figure('position',[500 500 1200 900])
+    # subplot(3,1,1)
+    # plot(spike_train)
+    # subplot(3,1,2)
+    # plot(new_spike_train)
+    # title('new spike train')
+
+    # subplot(3,2,5)
+    # hold on
+    # histogram(log10(ISI),linspace(-2,2,51),'FaceColor','b')
+    # histogram(log10(newISI),linspace(-2,2,51),'FaceColor','r')
+    # hold off
+
+    # waitforbuttonpress;
+    # end
+    return new_spike_train
+
+
+def shift_spikes(spike_train, break_points=None):
+
+    if not (break_points is None):
+        shuffled_spike_train = np.hstack(
+            [
+                shift_spikes(spike_train[start:end])[0]
+                for start, end in zip(break_points[:-1], break_points[1:])
+            ]
+        )
+        shift = None
+    else:
+        shuffled_spike_train = spike_train.copy()
+
+    shift = np.random.randint(np.max([1, len(shuffled_spike_train)]))
+    shuffled_spike_train = np.concatenate(
+        [shuffled_spike_train[shift:], shuffled_spike_train[:shift]]
+    )  ## shift spike train - actually faster than roll
+    return shuffled_spike_train, shift
 
 
 def get_input_dither(argin):
-  
-  if len(argin['w']) == 1:
-    spike_train = argin['spike_train']
-    spike_times = np.where(spike_train)[0]
-    spikes = spike_train[spike_times]
-    T = len(spike_train)
-    ISI = np.diff(spike_times)
-    
-  else:
-    spike_times = argin['spike_times']
-    spikes = argin['spikes']
-    T = argin['T']
-    ISI = argin['ISI']
-    
-  return spike_times,spikes,T,ISI,argin['w']
+
+    if len(argin["w"]) == 1:
+        spike_train = argin["spike_train"]
+        spike_times = np.where(spike_train)[0]
+        spikes = spike_train[spike_times]
+        T = len(spike_train)
+        ISI = np.diff(spike_times)
+
+    else:
+        spike_times = argin["spike_times"]
+        spikes = argin["spikes"]
+        T = argin["T"]
+        ISI = argin["ISI"]
+
+    return spike_times, spikes, T, ISI, argin["w"]
 
 
-def dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks):
-  
-  nspike_times = len(spike_times);
-  
-  dither = np.min([ISI-1,2*w])/2;
-  
-  r = 2*(rand(1,len(ISI)-1)-0.5);
-  
-  for i in range(1,len(ISI)):   ## probability of being left or right of initial spike should be equal! (otherwise, it destroys bursts!)
-    print('i: %d',i)
-    spike_times[i] = spike_times[i] + min(0,r[i-1])*ISI[i-1] + max(0,r[i-1])*ISI[i];
-  
-  spike_times = round(spike_times)
-  
-  if shuffle_peaks:
-    print(nspike_times)
-    print(nspike_times.shape)
-    print('watch out: permutation only works along first dimension ... proper shape?')
-    spikes = spikes[np.random.permutation(nspike_times)]
-  
-  new_spike_train = np.zeros(T)
-  for i in range(nspike_times):
-    t = spike_times[i]
-    new_spike_train[t] = new_spike_train[t] + spikes[i]
-  
-  return new_spike_train
+def dither_spikes(spike_times, spikes, T, ISI, w, shuffle_peaks):
 
+    nspike_times = len(spike_times)
+
+    dither = np.min([ISI - 1, 2 * w]) / 2
+
+    r = 2 * (rand(1, len(ISI) - 1) - 0.5)
+
+    for i in range(
+        1, len(ISI)
+    ):  ## probability of being left or right of initial spike should be equal! (otherwise, it destroys bursts!)
+        print("i: %d", i)
+        spike_times[i] = (
+            spike_times[i] + min(0, r[i - 1]) * ISI[i - 1] + max(0, r[i - 1]) * ISI[i]
+        )
+
+    spike_times = round(spike_times)
+
+    if shuffle_peaks:
+        print(nspike_times)
+        print(nspike_times.shape)
+        print(
+            "watch out: permutation only works along first dimension ... proper shape?"
+        )
+        spikes = spikes[np.random.permutation(nspike_times)]
+
+    new_spike_train = np.zeros(T)
+    for i in range(nspike_times):
+        t = spike_times[i]
+        new_spike_train[t] = new_spike_train[t] + spikes[i]
+
+    return new_spike_train
 
 
 def get_ISI(spike_train):
-  
-  ## this part effectively splits up spike bursts (single event with multiple spikes to multiple events with single spikes)
-  spike_times = np.where(spike_train)[0];
-  idx_old = 1;
-  new_spike_times = [];
-  # print(np.where(spike_train>1))
-  # print(np.where(spike_train>1)[0])
-  for t in np.where(spike_train>1)[0]:
-    idx_new = np.where(spike_times==t)[0]
-    nspikes = spike_train[t]
-    
-    new_spike_times = np.append([new_spike_times,spike_times[idx_old:idx_new],t+np.linspace(0,1-1/nspikes,nspikes)]);
-    #idx_old = idx_new+1;
-  
-  new_spike_times = np.append([new_spike_times,spike_times[idx_old:]]);
-  return np.diff(new_spike_times);
-  
+
+    ## this part effectively splits up spike bursts (single event with multiple spikes to multiple events with single spikes)
+    spike_times = np.where(spike_train)[0]
+    idx_old = 1
+    new_spike_times = []
+    # print(np.where(spike_train>1))
+    # print(np.where(spike_train>1)[0])
+    for t in np.where(spike_train > 1)[0]:
+        idx_new = np.where(spike_times == t)[0]
+        nspikes = spike_train[t]
+
+        new_spike_times = np.append(
+            [
+                new_spike_times,
+                spike_times[idx_old:idx_new],
+                t + np.linspace(0, 1 - 1 / nspikes, nspikes),
+            ]
+        )
+        # idx_old = idx_new+1;
+
+    new_spike_times = np.append([new_spike_times, spike_times[idx_old:]])
+    return np.diff(new_spike_times)

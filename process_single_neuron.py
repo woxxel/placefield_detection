@@ -1,5 +1,3 @@
-import logging
-
 from .alternative_detection_methods import (
     peak_method,
     information_method,
@@ -10,7 +8,7 @@ from .alternative_detection_methods import (
 from .utils import prepare_activity
 from .result_structures import build_results
 
-from .BayesModel import HierarchicalBayesInference, model_comparison
+from .BayesModel import model_comparison
 
 
 class process_single_neuron:

@@ -29,9 +29,9 @@ def stability_method(
 
     print(n_neurons_total, "neurons in total")
     print(n_neurons, "neurons to be processed")
-    
+
     nbin = behavior['dwelltime'].shape[0]
-    
+
     half_fmaps = np.zeros((n_neurons_total, 2, nbin))
     for neuron in range(n_neurons_total):
         # first half
@@ -53,7 +53,7 @@ def stability_method(
         )
 
     is_place_cell = np.zeros(n_neurons, "bool")
-    p_value = np.full(n_neurons,np.NaN)
+    p_value = np.full(n_neurons, np.nan)
     n_shuffles = 100
 
     for neuron_idx,neuron in tqdm.tqdm(enumerate(neurons)):
@@ -61,14 +61,13 @@ def stability_method(
         # print(half_fmaps[neuron, 1, :])
         # if half_fmaps[neuron, 0, :].sum()==0 or half_fmaps[neuron, 1, :].sum()==0:
         #     corr_original = -np.inf
-        #     p_value[neuron] = np.NaN
+        #     p_value[neuron] = np.nan
         #     is_place_cell[neuron] = False
         # else:
         corr_original = np.corrcoef(half_fmaps[neuron, 0, :], half_fmaps[neuron, 1, :])[
             0, 1
         ]
 
-    
         shuffled_corr = np.zeros(n_shuffles)
         for L, n_shuffle in enumerate(
             random.sample(range(neuron_activity.shape[0]), n_shuffles)

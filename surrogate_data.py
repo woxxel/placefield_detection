@@ -384,6 +384,6 @@ def get_firingmap(S, binpos, dwelltime=None, nbin=None):
 
     if not (dwelltime is None):
         firingmap = firingmap / dwelltime
-        firingmap[dwelltime == 0] = np.NaN
+        firingmap[dwelltime == 0] = np.nan
 
     return firingmap

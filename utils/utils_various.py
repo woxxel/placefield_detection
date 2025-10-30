@@ -58,7 +58,7 @@ def calculate_hsm(data, sort_it=True):
 
     data = data[np.isfinite(data)]
     if data.size == 0:
-        return np.NaN
+        return np.nan
     if np.all(data == data[0]):
         return data[0]
 
@@ -101,11 +101,11 @@ def bootstrap_data(fun, data, N_bs):
     single = False
     try:
         pars, _ = fun(data)
-        par = np.zeros(np.append(N_bs, np.array(pars).shape)) * np.NaN
+        par = np.zeros(np.append(N_bs, np.array(pars).shape)) * np.nan
     except:
         pars = fun(data)
         single = True
-        par = np.zeros((N_bs, 1)) * np.NaN
+        par = np.zeros((N_bs, 1)) * np.nan
 
     samples = np.random.randint(0, N_data, (N_bs, N_data))
 
@@ -501,7 +501,7 @@ def get_MI(p_joint, p_x, p_f):
 def get_recurr(status, status_dep):
 
     nC, nSes = status.shape
-    recurr = np.zeros((nSes, nSes)) * np.NaN
+    recurr = np.zeros((nSes, nSes)) * np.nan
     for s in range(nSes):  # np.where(cluster.sessions['bool'])[0]:
         overlap = status[status[:, s], :].sum(0).astype("float")
         N_ref = status_dep[status[:, s], :].sum(0)
@@ -528,7 +528,7 @@ def get_status_arr(cluster, SD=1):
                 for f in np.where(cluster.status_fields[c, s, :])[0]:
 
                     loc_compare = cluster.fields["location"][c, :s, :, 0]
-                    loc_compare[~cluster.status_fields[c, :s, :]] = np.NaN
+                    loc_compare[~cluster.status_fields[c, :s, :]] = np.nan
                     dLoc = np.abs(
                         np.mod(
                             cluster.fields["location"][c, s, f, 0]
@@ -615,7 +615,7 @@ def jackknife(X, Y, W=None, rank=1):
                 fit_jk[i, :] = np.linalg.lstsq(Xw[mask, :], Yw[mask])[0]
             # fit_jk[i,1] = 0
         except:
-            fit_jk[i, :] = np.NaN
+            fit_jk[i, :] = np.nan
 
     return np.nanmean(fit_jk, 0)
 
@@ -695,4 +695,3 @@ def add_number(fig, ax, order=1, offset=None):
         weight="bold",
         fontsize=14,
     )
-

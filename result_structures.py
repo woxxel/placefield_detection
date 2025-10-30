@@ -21,16 +21,13 @@ class PlaceFieldInferenceResults:
         #     self.hierarchical = kwargs.get("hierarchical", [])
         # else:
         #     # HBI.set_priors(N_f=self.N_f)
-        
 
         #     # self.priors = HBI.priors
         #     self.set_logp_func = HBI.set_logp_func
 
         #     self.periodic = HBI.periodic
-            
 
         # self.build_results()
-
 
     def build_results(self, priors, n_steps=100, posterior_arrays=None
     ):
@@ -48,7 +45,7 @@ class PlaceFieldInferenceResults:
         ## build dictionary shape
         base_dims = (self.n_cells,) if self.n_cells > 1 else ()
         self.fields = {
-            "n_modes": np.full(base_dims,self.N_f, dtype=int),
+            "n_modes": np.full(base_dims, self.N_f, dtype=int),
             "parameter": {
                 ## for each parameter
                 "global": {},  ## n x N_f x 3
@@ -60,10 +57,10 @@ class PlaceFieldInferenceResults:
                 "local": {},  ## n x N_f x n_trials x 100
             },
             "x": {},
-            "logz": np.full(base_dims + (2,), np.NaN),
+            "logz": np.full(base_dims + (2,), np.nan),
             "active_trials": np.zeros(base_dims + (self.N_f, self.n_trials)),
             ## need to be calculated extra
-            "reliability": np.full(base_dims + (self.N_f,), np.NaN),
+            "reliability": np.full(base_dims + (self.N_f,), np.nan),
         }
 
         ## define ranges for each parameter
@@ -72,7 +69,6 @@ class PlaceFieldInferenceResults:
             self.fields["x"] = self.posterior_arrays
         else:
             self.fields["x"] = posterior_arrays
-        
 
         ## fill dictionary with default values
         for key in priors.keys():
@@ -81,16 +77,15 @@ class PlaceFieldInferenceResults:
 
             # if param_name in self.fields["parameter"]["local"]:
             #     continue  ## already created
-    
+
             n = n_steps  # len(fields["x"][param_name]) - 1
             base_dims = (self.n_cells,) if self.n_cells > 1 else ()
-            
 
             if field is not None:# or (not self.from_HBI and param_name in self.hierarchical):
                 base_dims += (self.N_f,)
-            
+
             # print(f"building storage for {key}, {param_name}, field={field}, base_dims={base_dims}, n={n}")
-            
+
             if param_name in self.hierarchical:
                 base_dims += (self.n_trials,)
                 self.fields["parameter"]["local"][param_name] = np.full(base_dims + (3,), np.nan)
@@ -101,19 +96,17 @@ class PlaceFieldInferenceResults:
 
             # print(f"done building storage for {key}, {param_name}, {self.fields['parameter']['global'].get(param_name, None)},")
 
-
         ## finally, map "theta" to "theta_mean"
         if "theta_mean" in self.fields["parameter"]["global"]:
             self.fields["parameter"]["global"]["theta"] = self.fields["parameter"]["global"]["theta_mean"]
             self.fields["p_x"]["global"]["theta"] = self.fields["p_x"]["global"]["theta_mean"]
 
-
     def store_inference_results(self, results, parameter_names, periodic=None, logp=None, mode="dynesty"):
 
         periodic = periodic if periodic is not None else [False]*len(parameter_names)
-        
+
         self.samples = get_samples_from_results(results, mode=mode)
-        
+
         self.fields["logz"][0] = results["logz"][-1]
         self.fields["logz"][1] = results["logzerr"][-1]
 
@@ -132,7 +125,6 @@ class PlaceFieldInferenceResults:
             self.calculate_active_trials(logp)
             self.calculate_field_reliability()
 
-
     def store_local_parameters(self, key, key_idx, periodic=False):
 
         param_name,(field,trial) = parse_name_and_indices(key, ["field",""])
@@ -143,7 +135,6 @@ class PlaceFieldInferenceResults:
         self.fields["parameter"]["local"][param_name][field, trial, 1:] = posterior["CI"][[0, -1]]
 
         self.fields["p_x"]["local"][param_name][field, trial, :] = posterior["p_x"]
-
 
     def store_global_parameters(self, key, key_idx, periodic=False):
 
@@ -162,7 +153,6 @@ class PlaceFieldInferenceResults:
             self.fields["parameter"]["global"][param_name][field, 1:] = posterior["CI"][[0, -1]]
 
             self.fields["p_x"]["global"][param_name][field, :] = posterior["p_x"]
-
 
     def calculate_active_trials(self, logp, cum_posterior_level=0.05):
         # my_logp = self.set_logp_func(penalties=["overlap", "reliability"])
@@ -185,14 +175,12 @@ class PlaceFieldInferenceResults:
             ].sum(axis=0)
         self.fields["active_trials"] /= N_draws
 
-
     def calculate_field_reliability(self):
-        
+
         self.fields["reliability"] = (
             self.fields["active_trials"].sum(axis=1)
             / self.n_trials
         )
-
 
     def set_posterior_arrays(self, n_steps=100):
         self.posterior_arrays = {
@@ -222,18 +210,18 @@ def build_results(n_cells=1, n_bin=40, n_trials=None, modes=[], **kwargs):
     """
     results = {}
     # results["status"] = {
-    #     "SNR": np.full(n_cells, np.NaN),
-    #     "r_value": np.full(n_cells, np.NaN),
-    #     # "MI_value": np.full(n_cells, np.NaN),
+    #     "SNR": np.full(n_cells, np.nan),
+    #     "r_value": np.full(n_cells, np.nan),
+    #     # "MI_value": np.full(n_cells, np.nan),
     #     ## p-value? z-score? Isec, MI, uMI, etc?
     # }
 
     base_dims = (n_cells,) if n_cells > 1 else ()
 
     results["firingstats"] = {
-        "firing_rate": np.full(base_dims, np.NaN),
-        "map_rates": np.full(base_dims + (n_bin,), np.NaN),
-        "map_trial_rates": np.full(base_dims + (n_trials, n_bin), np.NaN),
+        "firing_rate": np.full(base_dims, np.nan),
+        "map_rates": np.full(base_dims + (n_bin,), np.nan),
+        "map_trial_rates": np.full(base_dims + (n_trials, n_bin), np.nan),
     }
 
     # results = results if n_cells > 1 else squeeze_deep_dict(results, ax=0)
@@ -249,7 +237,6 @@ def build_results(n_cells=1, n_bin=40, n_trials=None, modes=[], **kwargs):
     return results
 
 
-
 def build_mode_results(
     n_cells=1, mode="bayesian", **kwargs
 ):
@@ -257,7 +244,7 @@ def build_mode_results(
     results = {}
 
     results["is_place_cell"] = np.zeros(n_cells, dtype=bool)
-    results["p_value"] = np.full(n_cells, np.NaN)
+    results["p_value"] = np.full(n_cells, np.nan)
 
     if mode == "bayesian":
         # assert (HBI := kwargs.get("HBI", None)) is not None, "HBI model must be provided for Bayesian inference results."
@@ -271,7 +258,7 @@ def build_mode_results(
 
             PFI.build_results(priors=HBI.priors)
             results["fields"] = PFI.fields
-                
+
         # PFI = PlaceFieldInferenceResults(n_cells=n_cells,**kwargs)
         # results["fields"] = PFI.fields
 
@@ -290,15 +277,14 @@ def build_inference_results__thresholding(n_cells=1, N_f=0):
     fields = {
         "n_modes": np.zeros(n_cells, dtype=int),
         "parameter": {
-            "baseline": np.full(n_cells,np.NaN),
-            "amplitude": np.full((n_cells, N_f),np.NaN),
-            "location": np.full((n_cells, N_f),np.NaN),
-            "width": np.full((n_cells, N_f),np.NaN),
+            "baseline": np.full(n_cells, np.nan),
+            "amplitude": np.full((n_cells, N_f), np.nan),
+            "location": np.full((n_cells, N_f), np.nan),
+            "width": np.full((n_cells, N_f), np.nan),
         },
     }
 
     return fields
-
 
 
 def handover_inference_results(
@@ -378,4 +364,3 @@ def squeeze_deep_dict(d, ax=None):
             if isinstance(d[key], np.ndarray) and (d[key].shape[0] == 1):
                 d[key] = np.squeeze(d[key], axis=ax)
     return d
-

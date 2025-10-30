@@ -199,10 +199,16 @@ class placefield_detection_inference:
         S_key = 'qtl' if self.para['modes']['info'] == 'MI' else 's'
 
         # initialize computation and results structures
-        MI = {'MI_p_value':np.NaN,'MI_value':np.NaN,'MI_z_score':np.NaN,
-            'Isec_p_value':np.NaN,'Isec_value':np.NaN,'Isec_z_score':np.NaN}
-        MI_rand_distr = np.zeros(self.para['repnum'])*np.NaN
-        Isec_rand_distr = np.zeros(self.para['repnum'])*np.NaN
+        MI = {
+            "MI_p_value": np.nan,
+            "MI_value": np.nan,
+            "MI_z_score": np.nan,
+            "Isec_p_value": np.nan,
+            "Isec_value": np.nan,
+            "Isec_z_score": np.nan,
+        }
+        MI_rand_distr = np.zeros(self.para["repnum"]) * np.nan
+        Isec_rand_distr = np.zeros(self.para["repnum"]) * np.nan
 
         ### first, get actual MI value
         frate = gauss_smooth(self.activity[S_key],self.para['sigma']*self.para['f'])
@@ -372,7 +378,7 @@ class placefield_detection_inference:
     #             self.plt_model_selection(firingmap_bs.T,firingstats,trials_firingmap)
 
     #     firingstats['map'] = np.maximum(firingstats['map'],1/dwelltime.sum(0))#1/(self.para['nbin'])     ## set 0 firing rates to lowest possible (0 leads to problems in model, as 0 noise, thus likelihood = 0)
-    #     firingstats['map'][dwelltime.sum(0)<0.2] = np.NaN#1/(self.para['nbin']*self.behavior['T'])
+    #     firingstats['map'][dwelltime.sum(0)<0.2] = np.nan#1/(self.para['nbin']*self.behavior['T'])
     #     ### estimate noise of model
     #     return firingstats
 
@@ -484,7 +490,7 @@ class placefield_detection_inference:
         # print('nested sampler done, time: %5.3g'%(t_end-t_start))
 
         Z = [sampling_result['logz'],sampling_result['logzerr']]    ## store evidences
-        field = {'Bayes_factor':np.full(2,np.NaN)}
+        field = {"Bayes_factor": np.full(2, np.nan)}
         if f > 0:
 
             fields_tmp = self.detect_modes_from_posterior(sampler)
@@ -551,9 +557,9 @@ class placefield_detection_inference:
 
             # fields[f] = {}
             # fields[f]['nModes'] = 0
-            # fields[f]['posterior_mass'] = np.zeros(3)*np.NaN
-            # fields[f]['parameter'] = np.zeros((3,4,1+len(self.para['CI_arr'])))*np.NaN
-            # fields[f]['p_x'] = np.zeros((3,self.para['nbin']))*np.NaN
+            # fields[f]['posterior_mass'] = np.zeros(3)*np.nan
+            # fields[f]['parameter'] = np.zeros((3,4,1+len(self.para['CI_arr'])))*np.nan
+            # fields[f]['p_x'] = np.zeros((3,self.para['nbin']))*np.nan
 
             data['pos_samples'] = np.array(data['samples'][:,3+3*f])
             logp = np.exp(data['logp_posterior'])   ## even though its not logp, but p!!
@@ -766,9 +772,9 @@ class placefield_detection_inference:
 
         # fields_return = {}
         # fields_return['nModes'] = 0
-        # fields_return['posterior_mass'] = np.zeros(3)*np.NaN
-        # fields_return['parameter'] = np.zeros((3,4,1+len(self.para['CI_arr'])))*np.NaN
-        # fields_return['p_x'] = np.zeros((3,self.para['nbin']))*np.NaN
+        # fields_return['posterior_mass'] = np.zeros(3)*np.nan
+        # fields_return['parameter'] = np.zeros((3,4,1+len(self.para['CI_arr'])))*np.nan
+        # fields_return['p_x'] = np.zeros((3,self.para['nbin']))*np.nan
 
         # for f in range(fields[0]['nModes']):
         # p_cluster = fields[0]['posterior_mass'][f]
@@ -815,9 +821,9 @@ class placefield_detection_inference:
     def define_field(self,data,logX_base,modes,p,f):
 
         field = {}
-        field['posterior_mass'] = np.NaN
-        field['parameter'] = np.zeros((4,1+len(self.para['CI_arr'])))*np.NaN
-        field['p_x'] = np.zeros(self.para['nbin'])*np.NaN
+        field["posterior_mass"] = np.nan
+        field["parameter"] = np.zeros((4, 1 + len(self.para["CI_arr"]))) * np.nan
+        field["p_x"] = np.zeros(self.para["nbin"]) * np.nan
         # fields[f]['posterior_mass'][fields[f]['nModes']]
 
         logp = np.exp(data['logp_posterior'])

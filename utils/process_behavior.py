@@ -79,16 +79,16 @@ def prepare_behavior(
             data["velocity"] = velocity[data["active"]]
 
         data["dwelltime"] = get_dwelltime(data["position"], nbin, f)
-    
+
         if calculate_performance and rw_loc_in is not None:
             rw_pos = rw_loc_in * nbin
-            try:
-                data["performance"] = get_performance(
-                    binpos, velocity, time, rw_pos, 0, nbin, f, **kwargs
-                )
-            except:
-                pass
-    
+            # try:
+            data["performance"] = get_performance(
+                binpos, velocity, time, rw_pos, 0, nbin, f, **kwargs
+            )
+            # except:
+            #     pass
+
     data["nFrames"] = len(data["position"])
 
     return data
@@ -261,7 +261,6 @@ def get_performance(
 
     except:
         vel_thr = np.median(velocity[velocity > 0])
-    
 
     performance = {}
     performance["RW_reception"] = np.zeros(trials["ct"], "bool")
@@ -269,11 +268,11 @@ def get_performance(
 
     performance["slowDown"] = np.zeros(trials["ct"], "bool")
     performance["frame_slowDown"] = np.zeros(trials["ct"], "int")
-    performance["pos_slowDown"] = np.full(trials["ct"], np.NaN)
-    performance["t_slowDown_beforeRW"] = np.full(trials["ct"], np.NaN)
+    performance["pos_slowDown"] = np.full(trials["ct"], np.nan)
+    performance["t_slowDown_beforeRW"] = np.full(trials["ct"], np.nan)
 
     performance["RW_approach_time"] = np.zeros((trials["ct"], int(ra * f)))
-    performance["RW_approach_space"] = np.full((trials["ct"], nbin), np.NaN)
+    performance["RW_approach_space"] = np.full((trials["ct"], nbin), np.nan)
 
     if plt_trials:
         ncols = min(trials["ct"], 5)
@@ -303,11 +302,11 @@ def get_performance(
             idx_exitRW = idx_exitRW[0]
         else:
             idx_exitRW = pos_trial.shape[0] - 1
-        
+
         # print(f"Trial {t}: RW reception at {idx_RW_reception}, exit at {idx_exitRW}")
         # mean_vel = np.mean(vel_trial[idx_RW_reception:idx_exitRW])
         # print(f"Trial {t}: Mean velocity from RW reception to exit: {mean_vel:.2f} cm/s")
-        
+
         performance["RW_approach_time"][t, :] = vel_trial[ra_idxs + idx_RW_reception]
 
         if plt_trials:
@@ -337,7 +336,7 @@ def get_performance(
 
             # print(performance["RW_approach_space"][t,:].shape)
             ax_pos.plot(range(int(rw_pos),int(rw_end)),performance["RW_approach_space"][t,int(rw_pos):int(rw_end)], "g-",linewidth=1)
-            
+
             idx_trough_tmp = signal.find_peaks(
                 -vel_trial, prominence=2, height=-vel_thr, distance=f
             )[0]
@@ -484,7 +483,7 @@ def get_performance(
 
         plt.tight_layout()
         plt.show(block=False)
-    
+
     return performance
 
 

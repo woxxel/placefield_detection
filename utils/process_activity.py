@@ -103,7 +103,7 @@ def get_spiking_data(neuron_activity, f=15, Ns_thr=1, prctile=20):
     neuron_activity[neuron_activity < neuron_activity.max() * 10 ** (-3)] = 0
     Ns = (neuron_activity > 0).sum()
     if Ns < Ns_thr:
-        return np.zeros_like(neuron_activity), 0, np.NaN
+        return np.zeros_like(neuron_activity), 0, np.nan
 
     # trace = neuron_activity[neuron_activity > 0]
 
@@ -136,7 +136,6 @@ def get_spiking_data(neuron_activity, f=15, Ns_thr=1, prctile=20):
     )  # S > firing_threshold_adapt#
 
 
-
 def get_firingmap(spikes, binpos, dwelltime=None, nbin=None):
 
     if not nbin:
@@ -153,7 +152,7 @@ def get_firingmap(spikes, binpos, dwelltime=None, nbin=None):
 
     if not (dwelltime is None):
         firingmap = firingmap / dwelltime
-        firingmap[dwelltime == 0] = np.NaN
+        firingmap[dwelltime == 0] = np.nan
 
     return firingmap
 

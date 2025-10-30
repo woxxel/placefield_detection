@@ -94,10 +94,10 @@ def peak_method_batch(
     neurons = range(n_neurons) if not neurons else list(neurons)
     results = {
         "is_place_cell": np.zeros(n_neurons, "bool"),
-        "p_value": np.full(n_neurons, np.NaN),
+        "p_value": np.full(n_neurons, np.nan),
     }
-    # is_place_cell = np.zeros(n_neurons, "bool")    
-    # p_value = np.full(n_neurons, np.NaN)
+    # is_place_cell = np.zeros(n_neurons, "bool")
+    # p_value = np.full(n_neurons, np.nan)
 
     process_single = partial(
         peak_method_single,

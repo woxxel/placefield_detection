@@ -606,15 +606,15 @@ def compute_information_versus_sample_size(spike_train, stimulus_trace, sample_s
     N,T = spike_train.shape
     if spike_train.dtype != int:
         spikes = np.copy(spike_train)
-        spikes[spikes==0] = np.NaN
+        spikes[spikes == 0] = np.nan
         thr = np.nanmedian(spikes, axis=1)
         thr[np.isnan(thr)] = np.nanmean(thr)
         spike_train = np.clip(np.ceil(spike_train / thr[:, None]),a_min=0,a_max=30).astype('int')
 
     # sample_sizes = sample_sizes*T
     nbr_samples = len(sample_sizes)
-   
-    #initializing arrays to store information content
+
+    # initializing arrays to store information content
     if info_measures[0] or info_measures[1]:
         info_bit_spike_vs_sample = np.full((N, nbr_samples), np.nan, order = 'F')
         shuffle_info_bit_spike_vs_sample = np.full((N, nbr_samples), np.nan, order = 'F')
@@ -628,7 +628,7 @@ def compute_information_versus_sample_size(spike_train, stimulus_trace, sample_s
     t_shuffle = 0
     t_SI = 0
     t_MI = 0
-    #calculating info for different sample sizes
+    # calculating info for different sample sizes
     for n in range(nbr_samples):
 
         col_dim = int(np.ceil(repetitions * T / sample_sizes[n]))
@@ -637,19 +637,19 @@ def compute_information_versus_sample_size(spike_train, stimulus_trace, sample_s
         num_time_bins = int(np.floor(sample_sizes[n]))
 
         if info_measures[0] or info_measures[1]:
-            #initializing arrays to store information content
+            # initializing arrays to store information content
             info_bit_spike = np.full((N, col_dim), np.nan, order = 'F')
             shuffle_info_bit_spike = np.full((N, col_dim), np.nan, order = 'F')
             info_bit_sec = np.full((N, col_dim), np.nan, order = 'F')
             shuffle_info_bit_sec = np.full((N, col_dim), np.nan, order = 'F')
-        
+
         if info_measures[2]:
-            #initializing arrays to store information content
+            # initializing arrays to store information content
             info_mi = np.full((N, col_dim), np.nan, order = 'F')
             shuffle_info_mi = np.full((N, col_dim), np.nan, order = 'F')
-     
+
         for k in range(col_dim):
-            #shuffling spike trains
+            # shuffling spike trains
             # sample_indexes = np.argsort(np.random.rand(T))[:num_time_bins]
 
             t_shuffle_start = time.time()
@@ -659,17 +659,16 @@ def compute_information_versus_sample_size(spike_train, stimulus_trace, sample_s
 
             spike_train_sample = spike_train[:, sample_indexes]
             stimulus_trace_sample = stimulus_trace[sample_indexes]
-            
+
             t_shuffle += time.time() - t_shuffle_start
 
             if info_measures[0] or info_measures[1]:
-                
+
                 t_SI_start = time.time()
-                #computing tunung curves and calculating information content
+                # computing tunung curves and calculating information content
                 temp_tc, temp_states_distribution = compute_tuning_curves(spike_train_sample, stimulus_trace_sample, dt)
                 temp_fr = np.mean(spike_train_sample, axis=1) / dt
 
-                
                 temp_info_bit_spike, temp_info_bit_sec = compute_SI(temp_fr, temp_tc, temp_states_distribution)
 
                 info_bit_spike[:, k] = temp_info_bit_spike
@@ -691,22 +690,22 @@ def compute_information_versus_sample_size(spike_train, stimulus_trace, sample_s
                 temp_mi = compute_MI(spike_train_sample, stimulus_trace_sample)
                 # return
                 info_mi[:, k] = temp_mi
-                    
+
                 temp_mi_shuffle = compute_MI(shuffled_spikes, stimulus_trace_sample)
                 shuffle_info_mi[:, k] = temp_mi_shuffle
                 t_MI += time.time() - t_MI_start
 
         if info_measures[0] or info_measures[1]:
-            #averaging info content across sample sizes
+            # averaging info content across sample sizes
             info_bit_spike_vs_sample[:, n] = np.nanmean(info_bit_spike, axis=1)
             shuffle_info_bit_spike_vs_sample[:, n] = np.nanmean(shuffle_info_bit_spike, axis=1)
             info_bit_sec_vs_sample[:, n] = np.nanmean(info_bit_sec, axis=1)
             shuffle_info_bit_sec_vs_sample[:, n] = np.nanmean(shuffle_info_bit_sec, axis=1)
- 
+
         if info_measures[2]:
             info_mi_vs_sample[:, n] = np.nanmean(info_mi, axis=1)
             shuffle_info_mi_vs_sample[:, n] = np.nanmean(shuffle_info_mi, axis=1)
-    
+
     print('times: (shuffle/SI/MI)',t_shuffle, t_SI, t_MI)
 
     results = []

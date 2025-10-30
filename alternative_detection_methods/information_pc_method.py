@@ -95,7 +95,7 @@ def information_method_batch(
     n_neurons = neuron_activity.shape[0]
     neurons = range(n_neurons) if (neurons is None) else list(neurons)
     is_place_cell = np.zeros(n_neurons, "bool")
-    p_value = np.full(n_neurons, np.NaN)
+    p_value = np.full(n_neurons, np.nan)
 
     process_single = partial(
         information_method_single,

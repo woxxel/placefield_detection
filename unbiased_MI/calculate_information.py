@@ -46,43 +46,42 @@ def compute_MI(spike_train, stimulus_trace, epsilon=1e-30,print_time=False):
     -------
     MI (np.array):       naive mutual information for each neuron (N)
     """
-    
 
-    #set constant to prevent numerical issues
+    # set constant to prevent numerical issues
     # epsilon = 1e-30 if spike_train.dtype == np.float32 or stimulus_trace.dtype == np.float32 else np.finfo(float).tiny
-    
-    #getting unique states and count occurrences
+
+    # getting unique states and count occurrences
     states = np.unique(stimulus_trace)
     # print(states)
     num_states = len(states)
     num_cells, T = spike_train.shape
-    
-    #converting to integers if spike_train data has non-integer spike counts
+
+    # converting to integers if spike_train data has non-integer spike counts
     if print_time:
         t_spikes = time.time()
 
     if spike_train.dtype != int:
-    # if np.any(spike_train % 1 != 0):
+        # if np.any(spike_train % 1 != 0):
         # spikes = np.copy(spike_train)
-        spike_train[spike_train==0] = np.NaN
+        spike_train[spike_train == 0] = np.nan
         thr = np.nanmedian(spike_train, axis=1)
         spike_train = np.clip(np.ceil(spike_train / thr[:, None]),a_min=0,a_max=30)
-    
-    #getting response bins
+
+    # getting response bins
     max_rate = np.nanmax(spike_train)
     response_bins = np.arange(max_rate + 1)
-    
+
     if print_time:
         print('t spikes:', (time.time() - t_spikes)*1000)
         t_p_s = time.time()
 
-    #calculating the prior distribution of the encoded variable (dwelltime)
+    # calculating the prior distribution of the encoded variable (dwelltime)
     p_s = np.array([np.sum(stimulus_trace == state) for state in states]) / len(stimulus_trace)
     if print_time:
         print('time dwelltime:', (time.time() - t_p_s)*1000)
         t_p_r = time.time()
 
-    #calculating marginal probabilities for responses
+    # calculating marginal probabilities for responses
     p_r = np.zeros((num_cells, len(response_bins)))#, order = 'F')
     for r,response_bin in enumerate(response_bins):
         p_r[:, r] = np.sum(spike_train == response_bin, axis=1)
@@ -92,7 +91,7 @@ def compute_MI(spike_train, stimulus_trace, epsilon=1e-30,print_time=False):
         print('time p_r:', (time.time() - t_p_r)*1000)
         t_p_joint = time.time()
 
-    #calculating conditional probability
+    # calculating conditional probability
     p_r_given_s = np.zeros((num_cells, len(response_bins), num_states))#,order = 'F')
 
     for s, state in enumerate(states): # iterate through locations
@@ -102,58 +101,25 @@ def compute_MI(spike_train, stimulus_trace, epsilon=1e-30,print_time=False):
 
         for r,response_bin in enumerate(response_bins): # iterate through spike-#
             p_r_given_s[:, r, s] = np.sum(state_spike_train == response_bin, axis=1) / nS
-    
+
     if print_time:
         print('time p_joint:', (time.time() - t_p_joint)*1000)
         t_post = time.time()
-    #calculating conditional entropy
+    # calculating conditional entropy
     conditional_entropy = -np.sum(
       p_s * np.sum(p_r_given_s * np.log2(p_r_given_s + epsilon), axis=1),
       axis=1)
 
-    #calculating response entropy
+    # calculating response entropy
     response_entropy = -np.sum(p_r * np.log2(p_r + epsilon), axis=1)
-    
-    #calculating Mutual Information (MI)
+
+    # calculating Mutual Information (MI)
     MI = response_entropy - conditional_entropy
     MI[np.isnan(MI)] = 0  #handling cases with NaN results
     if print_time:
         print('time post:', (time.time() - t_post)*1000)
-    
+
     return MI
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def get_MI(p_joint,p_x,p_f):

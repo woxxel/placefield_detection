@@ -1,4 +1,4 @@
-import logging, time, warnings, signal
+import time, warnings, signal  # logging,
 import numpy as np
 from scipy.special import factorial as sp_factorial
 
@@ -22,16 +22,16 @@ from .HierarchicalBayesModel.functions import (
 
 from .HierarchicalBayesModel.NestedSamplingMethods import run_sampling
 
-from .utils import model_of_tuning_curve, poisson_probability
+from .utils import model_of_tuning_curve
 
 # os.environ["OMP_NUM_THREADS"] = "1"
-logging.basicConfig(level=logging.ERROR)
+# logging.basicConfig(level=logging.ERROR)
 
 warnings.filterwarnings("ignore")
 
-logger = logging.getLogger("ultranest")
-logger.addHandler(logging.NullHandler())
-logger.setLevel(logging.WARNING)
+# logger = logging.getLogger("ultranest")
+# logger.addHandler(logging.NullHandler())
+# logger.setLevel(logging.WARNING)
 
 
 class HierarchicalBayesInference(HierarchicalModel):    
@@ -570,55 +570,69 @@ def model_comparison(
         print("Not enough instances of activity detected")
         return None
 
+    N_f = 0
     previous_logz = -np.inf
     for n_field in range(2 + 1):
         if show_status:
             print(f"\n{n_field=}")
 
-        try:
-            if limit_execution_time:
-                signal.alarm(limit_execution_time)
+        # try:
+        if limit_execution_time:
+            signal.alarm(limit_execution_time)
 
-            HBI.set_priors(N_f=n_field)
-            res.build_results(HBI.priors)
+        HBI.set_priors(N_f=n_field)
+        res.build_results(HBI.priors)
 
-            my_prior_transform = HBI.set_prior_transform(vectorized=vectorized)
-            my_likelihood = HBI.set_logp_func(vectorized=vectorized)
+        my_prior_transform = HBI.set_prior_transform(vectorized=vectorized)
+        my_likelihood = HBI.set_logp_func(vectorized=vectorized)
 
-            tmp_results, _ = run_sampling(
-                my_prior_transform,
-                my_likelihood,
-                HBI.parameter_names_all,
-                nP=nP,
-                n_live=100, periodic=HBI.periodic,
-                mode=mode
+        tmp_results, _ = run_sampling(
+            my_prior_transform,
+            my_likelihood,
+            HBI.parameter_names_all,
+            nP=nP,
+            n_live=100,
+            periodic=HBI.periodic,
+            mode=mode,
+        )
+        res.store_inference_results(
+            tmp_results,
+            HBI.parameter_names_all,
+            HBI.periodic_boundaries,
+            HBI.set_logp_func(vectorized=False),
+        )  # this includes calculation of reliability and active trials
+
+        inference_results["field_models"][n_field] = res.fields
+        # handover_inference_results(res.fields, inference_results["bayesian"]["field_models"][n_field])
+
+        # hand over logz to joint results for easier comparison
+        inference_results["field_models"]["logz"][n_field, :] = inference_results[
+            "field_models"
+        ][n_field]["logz"]
+
+        if limit_execution_time:
+            signal.alarm(0)
+
+        ## 3 degrees of freedom, as statistic depends on difference of dof between models
+        if (
+            chi2.sf(
+                -2
+                * (
+                    previous_logz
+                    - inference_results["field_models"]["logz"][n_field, 0]
+                ),
+                3,
             )
-            res.store_inference_results(
-                tmp_results,
-                HBI.parameter_names_all,
-                HBI.periodic_boundaries,
-                HBI.set_logp_func(vectorized=False),
-            )  # this includes calculation of reliability and active trials
-
-            inference_results["field_models"][n_field] = res.fields
-            # handover_inference_results(res.fields, inference_results["bayesian"]["field_models"][n_field])
-
-            # hand over logz to joint results for easier comparison
-            inference_results["field_models"]["logz"][n_field,:] = inference_results["field_models"][n_field]["logz"]
-
-            if limit_execution_time:
-                signal.alarm(0)
-
-            ## 3 degrees of freedom, as statistic depends on difference of dof between models
-            if chi2.sf(-2*(previous_logz - inference_results["field_models"]["logz"][n_field,0]), 3) > 0.01:
-                break
-
-            N_f = n_field
-
-            previous_logz = inference_results["field_models"]["logz"][n_field,0]
-        except Exception as exc:
-            print("Exception:", exc)
+            > 0.01
+        ):
             break
+
+        N_f = n_field
+
+        previous_logz = inference_results["field_models"]["logz"][n_field, 0]
+        # except Exception as exc:
+        #     print("Exception:", exc)
+        #     break
 
     HBI.set_priors(N_f=2)
     res.build_results(priors=HBI.priors)

@@ -250,7 +250,6 @@ class process_session:
 
         return results
 
-
     def load_neuron_data(self, path_data):
 
         ## load activity data from CaImAn results
@@ -273,7 +272,7 @@ class process_session:
         neuron_quality = {}
         for key in ["SNR_comp", "r_values"]:
             neuron_quality[key] = (
-                ld[key] if key in ld.keys() else np.full(n_cells, np.NaN)
+                ld[key] if key in ld.keys() else np.full(n_cells, np.nan)
             )
 
         neuron_quality["idx_evaluate"] = np.logical_and(
@@ -282,10 +281,9 @@ class process_session:
         )
 
         # for key in ['idx_evaluate','idx_previous']:
-        # neuron_activity[key] = ld[key].astype('bool') if key in ld.keys() else np.full(self.n_cells,np.NaN)
+        # neuron_activity[key] = ld[key].astype('bool') if key in ld.keys() else np.full(self.n_cells,np.nan)
 
         return neuron_activity, neuron_quality
-
 
     # def calc_Icorr(self, S, trials_S):
 

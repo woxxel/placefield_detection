@@ -320,67 +320,71 @@ def compute_info_versus_sample_size(spike_train, stimulus_trace, sample_sizes, d
 ###   written by A.Schmidt, last reviewed on January, 22nd, 2020
 
 
-#from numba import jit
+# from numba import jit
 
-#@jit
+# @jit
 def shuffling(mode,shuffle_peaks,**varin):
-  
-  if mode == 'shift':
-    
-    [new_spike_train,tmp] = shift_spikes(varin['spike_train'])
-    if shuffle_peaks:
-      spike_times = np.where(new_spike_train)[0]
-      spikes = new_spike_train[spike_times]
-      new_spike_train[spike_times] = spikes[np.random.permutation(len(spike_times))]        ## shuffle spike numbers
-    
-  elif mode == 'dither':
-    
-    assert len(args)>=2, "You did not provide enough input. Please check the function description for further information."
-    [spike_times,spikes,T,ISI,w] = get_input_dither(varin);
-    
-    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks);
-    
-  elif mode == 'dithershift':
-    
-    assert len(args)>=4, "You did not provide enough input. Please check the function description for further information."
-    [spike_times,spikes,T,ISI,w] = get_input_dither(varin);
-    
-    new_spike_train = dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks);
-    [new_spike_train,shift] = shift_spikes(new_spike_train);
-    
-  elif mode == 'dsr':
-  
-    print('not yet implemented')
-    new_spike_train = np.NaN;
-    
-  
-  #plt = false;
-  #if plt && strcmp(mode,'dithershift')
-    
-    #if ~exist('spike_train','var')
-      #spike_train = zeros(1,T);
-      #spike_train(spike_times) = spikes;
-    #end
-    #ISI = get_ISI(spike_train);
-    #newISI = get_ISI(new_spike_train);
-    
-    #figure('position',[500 500 1200 900])
-    #subplot(3,1,1)
-    #plot(spike_train)
-    #subplot(3,1,2)
-    #plot(new_spike_train)
-    #title('new spike train')
-    
-    #subplot(3,2,5)
-    #hold on
-    #histogram(log10(ISI),linspace(-2,2,51),'FaceColor','b')
-    #histogram(log10(newISI),linspace(-2,2,51),'FaceColor','r')
-    #hold off
-    
-    #waitforbuttonpress;
-  #end
-  return new_spike_train
 
+    if mode == "shift":
+
+        [new_spike_train, tmp] = shift_spikes(varin["spike_train"])
+        if shuffle_peaks:
+            spike_times = np.where(new_spike_train)[0]
+            spikes = new_spike_train[spike_times]
+            new_spike_train[spike_times] = spikes[
+                np.random.permutation(len(spike_times))
+            ]  ## shuffle spike numbers
+
+    elif mode == "dither":
+
+        assert (
+            len(args) >= 2
+        ), "You did not provide enough input. Please check the function description for further information."
+        [spike_times, spikes, T, ISI, w] = get_input_dither(varin)
+
+        new_spike_train = dither_spikes(spike_times, spikes, T, ISI, w, shuffle_peaks)
+
+    elif mode == "dithershift":
+
+        assert (
+            len(args) >= 4
+        ), "You did not provide enough input. Please check the function description for further information."
+        [spike_times, spikes, T, ISI, w] = get_input_dither(varin)
+
+        new_spike_train = dither_spikes(spike_times, spikes, T, ISI, w, shuffle_peaks)
+        [new_spike_train, shift] = shift_spikes(new_spike_train)
+
+    elif mode == "dsr":
+
+        print("not yet implemented")
+        new_spike_train = np.nan
+
+    # plt = false;
+    # if plt && strcmp(mode,'dithershift')
+
+    # if ~exist('spike_train','var')
+    # spike_train = zeros(1,T);
+    # spike_train(spike_times) = spikes;
+    # end
+    # ISI = get_ISI(spike_train);
+    # newISI = get_ISI(new_spike_train);
+
+    # figure('position',[500 500 1200 900])
+    # subplot(3,1,1)
+    # plot(spike_train)
+    # subplot(3,1,2)
+    # plot(new_spike_train)
+    # title('new spike train')
+
+    # subplot(3,2,5)
+    # hold on
+    # histogram(log10(ISI),linspace(-2,2,51),'FaceColor','b')
+    # histogram(log10(newISI),linspace(-2,2,51),'FaceColor','r')
+    # hold off
+
+    # waitforbuttonpress;
+    # end
+    return new_spike_train
 
 
 def shift_spikes(spike_train,shift=None,axis=None):
@@ -437,7 +441,6 @@ def dither_spikes(spike_times,spikes,T,ISI,w,shuffle_peaks):
   return new_spike_train
 
 
-
 def get_ISI(spike_train):
   
   ## this part effectively splits up spike bursts (single event with multiple spikes to multiple events with single spikes)
@@ -455,4 +458,3 @@ def get_ISI(spike_train):
   
   new_spike_times = np.append([new_spike_times,spike_times[idx_old:]]);
   return np.diff(new_spike_times);
-  
