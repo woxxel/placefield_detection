@@ -1,13 +1,13 @@
-
 import os,pickle, h5py, logging
 import scipy.sparse as ssparse
 import scipy.io as spio
 from typing import Dict
 import numpy as np
 
-def load_data(loadPath):
 
-    ext = os.path.splitext(loadPath)[1]
+def load_data(loadPath, ext=None):
+
+    ext = os.path.splitext(loadPath)[1] if ext is None else ext
     if ext == ".hdf5":
         ld = load_dict_from_hdf5(loadPath)  # function from CaImAn
     elif ext == ".pkl":

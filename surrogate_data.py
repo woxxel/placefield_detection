@@ -20,7 +20,7 @@ import random, time#, tqdm
 import multiprocessing as mp
 from functools import partial
 
-from .utils import intensity_model_from_position, lognorm_paras
+from .utils import intensity_model_from_position, lognorm_paras, load_data
 from .BayesModel import place_field
 
 
@@ -42,8 +42,7 @@ class SurrogateData:
         """
 
         if filePath:
-            with open(filePath, "rb") as f:
-                data = pickle.load(f)
+            data = load_data(filePath)
 
             self.tuning_curve_parameter = data["tuning_curve_parameter"]
             behavior = data["behavior"]
